@@ -1,0 +1,11 @@
+{
+  "name": "salesforce-dashboard-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MVP dashboard privado conectado a Salesforce con HTML/JS y Node.js.",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "check": "node --check server.js && node --check public/app.js"
+  }
+}

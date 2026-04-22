@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tasa de Conversion UCEMA</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">UC</div>
+          <div>
+            <p class="eyebrow">Dashboard privado</p>
+            <h1>Conversion UCEMA</h1>
+          </div>
+        </div>
+
+        <section class="sidebar-card">
+          <p class="eyebrow">Sesion</p>
+          <p id="session-status" class="status-pill">Verificando sesion...</p>
+          <p id="session-user" class="muted light-copy">Esperando autenticacion.</p>
+        </section>
+
+        <section class="sidebar-card">
+          <p class="eyebrow">Acciones</p>
+          <button id="login-button" class="primary-button">Entrar con Salesforce</button>
+          <button id="refresh-button" class="secondary-button" disabled>Actualizar ahora</button>
+          <button id="logout-button" class="ghost-button" hidden>Cerrar sesion</button>
+        </section>
+
+        <section class="sidebar-card">
+          <p class="eyebrow">Operacion</p>
+          <p id="last-updated" class="light-copy">Todavia sin datos.</p>
+          <p id="global-message" class="helper">
+            El usuario entra con SSO y el dashboard consulta con un usuario tecnico.
+          </p>
+        </section>
+      </aside>
+
+      <main class="content">
+        <header class="hero">
+          <div>
+            <p class="eyebrow">MVP orientado al requerimiento</p>
+            <h2 id="dashboard-title">Tasa de Conversion</h2>
+            <p id="dashboard-subtitle" class="hero-copy">
+              Solicitudes sobre Consultas segmentadas por Asesor y Programa.
+            </p>
+            <div class="formula-chip">
+              <span>Formula</span>
+              <strong id="formula-text">Solicitudes / Consultas * 100</strong>
+            </div>
+          </div>
+
+          <div class="hero-panel">
+            <span class="hero-panel-label">Modelo de acceso</span>
+            <strong>SSO del usuario + Client Credentials</strong>
+            <p id="access-summary" class="hero-panel-copy">
+              Los usuarios ingresan con su cuenta y los datos se leen con el usuario de integracion.
+            </p>
+          </div>
+        </header>
+
+        <section id="welcome-card" class="welcome-card">
+          <h3>Listo para conectar</h3>
+          <p>
+            Este MVP ya esta preparado para calcular la tasa agregada entre
+            <code>Programa_de_Historial__c</code> y <code>hed__Application__c</code>,
+            con filtros por defecto y refresco manual.
+          </p>
+          <ul class="welcome-list">
+            <li>Login por Salesforce My Domain</li>
+            <li>SSO con Microsoft</li>
+            <li>Consultas con usuario de integracion</li>
+            <li>Segmentacion por asesor y programa</li>
+          </ul>
+        </section>
+
+        <section id="dashboard-content" class="dashboard-content" hidden>
+          <section class="section-card">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Contexto</p>
+                <h3>Filtros y rango</h3>
+              </div>
+              <p id="date-window" class="section-meta"></p>
+            </div>
+            <div id="filters-grid" class="filters-grid"></div>
+            <div id="notes-list" class="notes-list"></div>
+          </section>
+
+          <section class="section-card">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Resumen</p>
+                <h3>KPIs principales</h3>
+              </div>
+            </div>
+            <div id="kpi-grid" class="kpi-grid"></div>
+          </section>
+
+          <section class="chart-layout">
+            <section class="section-card">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow">Segmentacion</p>
+                  <h3>Tasa por asesor</h3>
+                </div>
+              </div>
+              <div id="owner-chart" class="bar-list"></div>
+            </section>
+
+            <section class="section-card">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow">Segmentacion</p>
+                  <h3>Tasa por programa</h3>
+                </div>
+              </div>
+              <div id="program-chart" class="bar-list"></div>
+            </section>
+          </section>
+
+          <section class="table-layout">
+            <section class="section-card">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow">Detalle</p>
+                  <h3>Asesor</h3>
+                </div>
+              </div>
+              <div id="owner-table" class="table-wrap"></div>
+            </section>
+
+            <section class="section-card">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow">Detalle</p>
+                  <h3>Programa</h3>
+                </div>
+              </div>
+              <div id="program-table" class="table-wrap"></div>
+            </section>
+          </section>
+
+          <section class="section-card">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Cruce</p>
+                <h3>Asesor por programa</h3>
+              </div>
+            </div>
+            <div id="owner-program-table" class="table-wrap"></div>
+          </section>
+
+          <section class="table-layout">
+            <section class="section-card">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow">Muestra</p>
+                  <h3>Consultas recientes</h3>
+                </div>
+              </div>
+              <div id="consultas-sample" class="table-wrap"></div>
+            </section>
+
+            <section class="section-card">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow">Muestra</p>
+                  <h3>Solicitudes recientes</h3>
+                </div>
+              </div>
+              <div id="solicitudes-sample" class="table-wrap"></div>
+            </section>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
