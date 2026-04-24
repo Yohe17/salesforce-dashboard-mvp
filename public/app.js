@@ -252,11 +252,7 @@ function renderKpis() {
     value.className = "kpi-value";
     value.textContent = metric.type === "percent" ? formatPercent(metric.value) : formatNumber(metric.value);
 
-    const detail = document.createElement("p");
-    detail.className = "kpi-detail";
-    detail.textContent = metric.detail;
-
-    card.append(label, value, detail);
+    card.append(label, value);
     elements.kpiGrid.append(card);
   });
 }
