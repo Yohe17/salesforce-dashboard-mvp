@@ -18,9 +18,6 @@ const elements = {
   logoutButton: document.querySelector("#logout-button"),
   welcomeCard: document.querySelector("#welcome-card"),
   dashboardContent: document.querySelector("#dashboard-content"),
-  dateWindow: document.querySelector("#date-window"),
-  filtersGrid: document.querySelector("#filters-grid"),
-  notesList: document.querySelector("#notes-list"),
   kpiGrid: document.querySelector("#kpi-grid"),
   ownerChart: document.querySelector("#owner-chart"),
   programChart: document.querySelector("#program-chart"),
@@ -156,9 +153,6 @@ function renderDashboard() {
     return;
   }
 
-  elements.dateWindow.textContent = state.dashboard.dateWindow.label;
-  renderFilters();
-  renderNotes();
   renderKpis();
   renderBarList(elements.ownerChart, state.dashboard.charts.byOwner);
   renderBarList(elements.programChart, state.dashboard.charts.byProgram);
@@ -192,8 +186,6 @@ function renderDashboard() {
 
 function clearDashboardContainers() {
   [
-    elements.filtersGrid,
-    elements.notesList,
     elements.kpiGrid,
     elements.ownerChart,
     elements.programChart,
@@ -204,37 +196,6 @@ function clearDashboardContainers() {
     elements.solicitudesSample
   ].forEach((element) => {
     element.innerHTML = "";
-  });
-}
-
-function renderFilters() {
-  elements.filtersGrid.innerHTML = "";
-  state.dashboard.filters.forEach((filterGroup) => {
-    const card = document.createElement("article");
-    card.className = "filter-card";
-
-    const title = document.createElement("h4");
-    title.textContent = filterGroup.label;
-
-    const list = document.createElement("ul");
-    filterGroup.values.forEach((value) => {
-      const item = document.createElement("li");
-      item.textContent = value;
-      list.append(item);
-    });
-
-    card.append(title, list);
-    elements.filtersGrid.append(card);
-  });
-}
-
-function renderNotes() {
-  elements.notesList.innerHTML = "";
-  state.dashboard.notes.forEach((note) => {
-    const pill = document.createElement("div");
-    pill.className = "note-pill";
-    pill.textContent = note;
-    elements.notesList.append(pill);
   });
 }
 
