@@ -29,7 +29,6 @@ const sessions = new Map();
 const oauthStates = new Map();
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
-let integrationTokenCache = null;
 
 const STATIC_FILES = {
   "/": "index.html",
@@ -53,7 +52,7 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         time: new Date().toISOString(),
         authConfigReady: isUserAuthConfigReady(),
-        integrationConfigReady: isIntegrationConfigReady(),
+        dataAccessMode: "salesforce_user",
         configLoaded: fs.existsSync(env.dashboardConfigPath)
       });
     }
@@ -173,7 +172,6 @@ function handleSession(req, res) {
     return sendJson(res, 200, {
       authenticated: false,
       authConfigReady: isUserAuthConfigReady(),
-      integrationConfigReady: isIntegrationConfigReady(),
       allowlistEnabled: env.dashboardAllowedUsers.length > 0,
       user: null
     });
@@ -185,7 +183,6 @@ function handleSession(req, res) {
   sendJson(res, 200, {
     authenticated: true,
     authConfigReady: isUserAuthConfigReady(),
-    integrationConfigReady: isIntegrationConfigReady(),
     allowlistEnabled: env.dashboardAllowedUsers.length > 0,
     user: session.user
   });
@@ -203,21 +200,7 @@ async function handleDashboardConfig(req, res) {
     const config = await readDashboardConfig();
     sendJson(res, 200, {
       title: config.title,
-      subtitle: config.subtitle,
-      formula: config.formula,
-      notes: config.notes,
-      accessMode: config.accessMode,
-      dateRange: buildDateWindow(config.dateRange),
-      filters: [
-        {
-          label: config.consultas.label,
-          values: summarizeFilterSet(config.consultas, buildDateWindow(config.dateRange))
-        },
-        {
-          label: config.solicitudes.label,
-          values: summarizeFilterSet(config.solicitudes, buildDateWindow(config.dateRange))
-        }
-      ]
+      subtitle: config.subtitle || ""
     });
   } catch (error) {
     sendJson(res, 500, {
@@ -240,23 +223,17 @@ async function handleDashboardRefresh(req, res) {
     });
   }
 
-  if (!isIntegrationConfigReady()) {
-    return sendJson(res, 500, {
-      error: "Integration user configuration is incomplete"
-    });
-  }
-
   try {
     const config = await readDashboardConfig();
     const dateWindow = buildDateWindow(config.dateRange);
-    const integrationAuth = await getIntegrationAuth();
-    const consultasRecords = await fetchAllRecords(integrationAuth, buildQuery(config.consultas, dateWindow));
-    const solicitudesRecords = await fetchAllRecords(integrationAuth, buildQuery(config.solicitudes, dateWindow));
+    const consultasRecords = await fetchAllRecords(session, buildQuery(config.consultas, dateWindow));
+    const solicitudesRecords = await fetchAllRecords(session, buildQuery(config.solicitudes, dateWindow));
+    const dashboardUser = await enrichDashboardUser(session);
 
     const consultas = consultasRecords.map((record) => mapRecord(record, config.consultas));
     const solicitudes = solicitudesRecords.map((record) => mapRecord(record, config.solicitudes));
 
-    sendJson(res, 200, buildDashboardPayload(config, dateWindow, consultas, solicitudes, session.user));
+    sendJson(res, 200, buildDashboardPayload(config, dateWindow, consultas, solicitudes, dashboardUser));
   } catch (error) {
     console.error("Dashboard refresh failed", error);
     sendJson(res, 500, {
@@ -285,7 +262,7 @@ function handleAuthLogin(res) {
   authorizeUrl.searchParams.set("response_type", "code");
   authorizeUrl.searchParams.set("client_id", env.salesforceClientId);
   authorizeUrl.searchParams.set("redirect_uri", getRedirectUri());
-  authorizeUrl.searchParams.set("scope", "api");
+  authorizeUrl.searchParams.set("scope", "api refresh_token");
   authorizeUrl.searchParams.set("state", state);
   authorizeUrl.searchParams.set("code_challenge", challenge);
   authorizeUrl.searchParams.set("code_challenge_method", "S256");
@@ -328,8 +305,9 @@ async function handleAuthCallback(requestUrl, res) {
         displayName: identity.display_name || identity.name || identity.username,
         email: identity.email || "",
         organizationId: identity.organization_id,
-        dataAccessMode: "integration_user"
-      }
+        dataAccessMode: "salesforce_user"
+      },
+      salesforceAuth: buildSalesforceAuth(tokenPayload)
     });
 
     setSessionCookie(res, session.id);
@@ -503,23 +481,21 @@ function escapeSoqlString(value) {
   return String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
-async function fetchAllRecords(integrationAuth, soql) {
+async function fetchAllRecords(session, soql) {
   const records = [];
-  let nextUrl = `${integrationAuth.instanceUrl}/services/data/v${env.salesforceApiVersion}/query?q=${encodeURIComponent(soql)}`;
+  let auth = await getSessionSalesforceAuth(session);
+  let nextUrl = `${auth.instanceUrl}/services/data/v${env.salesforceApiVersion}/query?q=${encodeURIComponent(soql)}`;
   let attempts = 0;
 
   while (nextUrl) {
     const response = await fetch(nextUrl, {
       headers: {
-        Authorization: `Bearer ${integrationAuth.accessToken}`
+        Authorization: `Bearer ${auth.accessToken}`
       }
     });
 
     if (response.status === 401 && attempts === 0) {
-      integrationTokenCache = null;
-      const refreshed = await getIntegrationAuth(true);
-      integrationAuth.accessToken = refreshed.accessToken;
-      integrationAuth.instanceUrl = refreshed.instanceUrl;
+      auth = await getSessionSalesforceAuth(session, true);
       attempts += 1;
       continue;
     }
@@ -531,39 +507,73 @@ async function fetchAllRecords(integrationAuth, soql) {
 
     const payload = await response.json();
     records.push(...(payload.records || []));
-    nextUrl = payload.done ? null : `${integrationAuth.instanceUrl}${payload.nextRecordsUrl}`;
+    nextUrl = payload.done ? null : `${auth.instanceUrl}${payload.nextRecordsUrl}`;
   }
 
   return records;
 }
 
-async function getIntegrationAuth(forceRefresh = false) {
-  if (!forceRefresh && integrationTokenCache && integrationTokenCache.expiresAt > Date.now()) {
-    return { ...integrationTokenCache };
+function buildSalesforceAuth(tokenPayload, fallbackInstanceUrl = env.salesforceAuthBaseUrl) {
+  return {
+    accessToken: tokenPayload.access_token,
+    refreshToken: tokenPayload.refresh_token || null,
+    instanceUrl: normalizeUrl(tokenPayload.instance_url || fallbackInstanceUrl),
+    expiresAt: Date.now() + inferTokenLifetimeMs(tokenPayload)
+  };
+}
+
+function inferTokenLifetimeMs(tokenPayload) {
+  const seconds = Number(tokenPayload.expires_in || 0);
+  if (Number.isFinite(seconds) && seconds > 0) {
+    return Math.max(seconds - 60, 60) * 1000;
   }
 
+  return 90 * 60 * 1000;
+}
+
+async function getSessionSalesforceAuth(session, forceRefresh = false) {
+  if (!session.salesforceAuth?.accessToken) {
+    throw new Error("La sesion de Salesforce no esta disponible. Vuelve a iniciar sesion.");
+  }
+
+  const shouldRefresh =
+    forceRefresh ||
+    !session.salesforceAuth.expiresAt ||
+    session.salesforceAuth.expiresAt <= Date.now() + 15 * 1000;
+
+  if (!shouldRefresh) {
+    return session.salesforceAuth;
+  }
+
+  if (!session.salesforceAuth.refreshToken) {
+    throw new Error("La sesion de Salesforce expiro. Vuelve a iniciar sesion.");
+  }
+
+  const refreshed = await refreshUserToken(session.salesforceAuth.refreshToken);
+  session.salesforceAuth = {
+    ...buildSalesforceAuth(refreshed, session.salesforceAuth.instanceUrl),
+    refreshToken: refreshed.refresh_token || session.salesforceAuth.refreshToken
+  };
+  sessions.set(session.id, session);
+  return session.salesforceAuth;
+}
+
+async function refreshUserToken(refreshToken) {
   const tokenUrl = `${env.salesforceAuthBaseUrl}/services/oauth2/token`;
   const body = new URLSearchParams({
-    grant_type: "client_credentials",
+    grant_type: "refresh_token",
     client_id: env.salesforceClientId,
-    client_secret: env.salesforceClientSecret
+    client_secret: env.salesforceClientSecret,
+    refresh_token: refreshToken
   });
 
-  const payload = await fetchJson(tokenUrl, {
+  return fetchJson(tokenUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded"
     },
     body: body.toString()
   });
-
-  integrationTokenCache = {
-    accessToken: payload.access_token,
-    instanceUrl: payload.instance_url || env.salesforceAuthBaseUrl,
-    expiresAt: Date.now() + 8 * 60 * 1000
-  };
-
-  return { ...integrationTokenCache };
 }
 
 async function exchangeCodeForToken(code, verifier) {
@@ -623,6 +633,75 @@ function mapRecord(record, objectConfig) {
   };
 }
 
+async function enrichDashboardUser(session) {
+  const dashboardUser = { ...session.user };
+
+  try {
+    const userRecord = await fetchCurrentUserRecord(session, session.user.id);
+    dashboardUser.displayName = userRecord.Name || dashboardUser.displayName;
+    dashboardUser.username = userRecord.Username || dashboardUser.username;
+    dashboardUser.email = userRecord.Email || dashboardUser.email;
+    dashboardUser.objetivoPercent = normalizePercentValue(userRecord.Objetivo__c);
+  } catch (error) {
+    dashboardUser.objetivoPercent = null;
+  }
+
+  session.user = dashboardUser;
+  sessions.set(session.id, session);
+  return dashboardUser;
+}
+
+async function fetchCurrentUserRecord(session, userId) {
+  const records = await fetchAllRecords(
+    session,
+    `SELECT Id, Name, Username, Email, Objetivo__c FROM User WHERE Id = '${escapeSoqlString(userId)}' LIMIT 1`
+  );
+
+  return records[0] || {};
+}
+
+function normalizePercentValue(value) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return null;
+  }
+
+  const normalized = Math.abs(numeric) <= 1 ? numeric * 100 : numeric;
+  return Number(normalized.toFixed(2));
+}
+
+function buildComplianceStatus(value) {
+  if (value === null) {
+    return {
+      icon: "—",
+      tone: "neutral"
+    };
+  }
+
+  if (value < 30) {
+    return {
+      icon: "🔴",
+      tone: "danger"
+    };
+  }
+
+  if (value > 70) {
+    return {
+      icon: "🟢",
+      tone: "success"
+    };
+  }
+
+  return {
+    icon: "🟡",
+    tone: "warning"
+  };
+}
+
 function buildDashboardPayload(config, dateWindow, consultas, solicitudes, user) {
   const byOwner = buildSeries(consultas, solicitudes, (row) => ({
     key: row.owner,
@@ -642,52 +721,51 @@ function buildDashboardPayload(config, dateWindow, consultas, solicitudes, user)
   const consultasCount = consultas.length;
   const solicitudesCount = solicitudes.length;
   const conversionRate = computeRate(solicitudesCount, consultasCount);
+  const complianceValue = normalizePercentValue(user?.objetivoPercent);
+  const complianceStatus = buildComplianceStatus(complianceValue);
 
   return {
     title: config.title,
     subtitle: config.subtitle,
-    formula: config.formula,
     generatedAt: new Date().toISOString(),
     dateWindow,
-    accessMode: config.accessMode,
-    notes: config.notes,
-    user,
-    filters: [
-      {
-        label: config.consultas.label,
-        values: summarizeFilterSet(config.consultas, dateWindow)
-      },
-      {
-        label: config.solicitudes.label,
-        values: summarizeFilterSet(config.solicitudes, dateWindow)
-      }
-    ],
+    user: {
+      ...user,
+      objetivoPercent: complianceValue
+    },
     kpis: [
       {
         label: "Consultas",
         value: consultasCount,
-        detail: config.consultas.apiName
+        tone: "default"
       },
       {
         label: "Solicitudes",
         value: solicitudesCount,
-        detail: config.solicitudes.apiName
+        tone: "default"
       },
       {
         label: "Tasa de conversion",
         value: conversionRate,
         type: "percent",
-        detail: config.formula
+        tone: "accent"
+      },
+      {
+        label: "Semaforo de cumplimiento",
+        value: complianceValue,
+        type: "semaphore",
+        icon: complianceStatus.icon,
+        tone: complianceStatus.tone
       },
       {
         label: "Owners cubiertos",
         value: byOwner.length,
-        detail: "Owners con registros en el rango"
+        tone: "default"
       },
       {
         label: "Programas cubiertos",
         value: byProgram.length,
-        detail: "Programas con actividad"
+        tone: "default"
       }
     ],
     charts: {
@@ -768,22 +846,6 @@ function computeRate(solicitudes, consultas) {
   return Number(((solicitudes / consultas) * 100).toFixed(2));
 }
 
-function summarizeFilterSet(objectConfig, dateWindow) {
-  const items = [
-    `${objectConfig.dateField}: ${dateWindow.label}`
-  ];
-
-  for (const filter of objectConfig.filters || []) {
-    if (filter.operator === "eq") {
-      items.push(`${filter.field} = ${filter.value}`);
-    } else if (filter.operator === "in") {
-      items.push(`${filter.field} in ${filter.values.join(", ")}`);
-    }
-  }
-
-  return items;
-}
-
 function buildDateWindow(dateRangeConfig = {}) {
   const now = new Date();
   const currentYear = now.getUTCFullYear();
@@ -855,14 +917,6 @@ function isUserAuthConfigReady() {
       env.salesforceClientId &&
       env.salesforceClientSecret &&
       env.salesforceRedirectPath
-  );
-}
-
-function isIntegrationConfigReady() {
-  return Boolean(
-    env.salesforceAuthBaseUrl &&
-      env.salesforceClientId &&
-      env.salesforceClientSecret
   );
 }
 

@@ -1,19 +1,10 @@
 {
-  "title": "Tasa de Conversion UCEMA",
-  "subtitle": "Solicitudes sobre Consultas con autenticacion SSO y consultas ejecutadas por usuario de integracion",
-  "formula": "Solicitudes / Consultas * 100",
+  "title": "Panel asesores",
+  "subtitle": "",
   "dateRange": {
     "mode": "current_calendar_year",
     "label": "Ano calendario actual"
   },
-  "accessMode": {
-    "login": "Usuarios finales ingresan con Salesforce SSO sobre Microsoft",
-    "data": "Los datos se consultan con un usuario de integracion por Client Credentials Flow"
-  },
-  "notes": [
-    "No existe relacion directa entre Consultas y Solicitudes. La tasa se calcula en forma agregada sobre el mismo rango y filtros equivalentes.",
-    "El rango dinamico por defecto del MVP se resolvio como ano calendario actual para ambos objetos."
-  ],
   "consultas": {
     "label": "Consultas",
     "apiName": "Programa_de_Historial__c",
@@ -36,19 +27,6 @@
         "field": "RecordType.Name",
         "operator": "eq",
         "value": "UCEMAX"
-      },
-      {
-        "field": "Owner.Name",
-        "operator": "in",
-        "values": [
-          "Azul Schmidt",
-          "Francisco Aliano",
-          "Pedro Graces",
-          "Santiago Ivaldi Sesto",
-          "Matias Manconi",
-          "Bautista rebollini",
-          "Segundo Vilamajo"
-        ]
       },
       {
         "field": "Origen_de_la_consulta__c",
@@ -78,19 +56,6 @@
       "Tipo_de_Programa__c"
     ],
     "filters": [
-      {
-        "field": "Owner.Name",
-        "operator": "in",
-        "values": [
-          "Azul Schmidt",
-          "Francisco Aliano",
-          "Pedro Graces",
-          "Santiago Ivaldi Sesto",
-          "Matias Manconi",
-          "Bautista rebollini",
-          "Segundo Vilamajo"
-        ]
-      },
       {
         "field": "Tipo_de_Programa__c",
         "operator": "eq",

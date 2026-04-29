@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Tasa de Conversion UCEMA</title>
+    <title>Panel asesores</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -13,8 +13,8 @@
           <div class="brand-mark">UC</div>
           <div>
             <p class="eyebrow">Dashboard privado</p>
-            <h1>Conversion UCEMA</h1>
-            <p class="brand-caption">Universidad del CEMA · Analytics</p>
+            <h1>Panel asesores</h1>
+            <p class="brand-caption">Universidad del CEMA</p>
           </div>
         </div>
 
@@ -34,9 +34,7 @@
         <section class="sidebar-card">
           <p class="eyebrow">Operacion</p>
           <p id="last-updated" class="light-copy">Todavia sin datos.</p>
-          <p id="global-message" class="helper">
-            El usuario entra con SSO y el dashboard consulta con un usuario tecnico.
-          </p>
+          <p id="global-message" class="helper" hidden></p>
         </section>
       </aside>
 
@@ -44,40 +42,10 @@
         <header class="hero">
           <div>
             <p class="hero-tag">Universidad del CEMA</p>
-            <p class="eyebrow">MVP orientado al requerimiento</p>
-            <h2 id="dashboard-title">Tasa de Conversion</h2>
-            <p id="dashboard-subtitle" class="hero-copy">
-              Solicitudes sobre Consultas segmentadas por Asesor y Programa.
-            </p>
-            <div class="formula-chip">
-              <span>Formula</span>
-              <strong id="formula-text">Solicitudes / Consultas * 100</strong>
-            </div>
-          </div>
-
-          <div class="hero-panel">
-            <span class="hero-panel-label">Modelo de acceso</span>
-            <strong>SSO del usuario + Client Credentials</strong>
-            <p id="access-summary" class="hero-panel-copy">
-              Los usuarios ingresan con su cuenta y los datos se leen con el usuario de integracion.
-            </p>
+            <h2 id="dashboard-title">Panel asesores</h2>
+            <p id="dashboard-subtitle" class="hero-copy" hidden></p>
           </div>
         </header>
-
-        <section id="welcome-card" class="welcome-card">
-          <h3>Listo para conectar</h3>
-          <p>
-            Este MVP ya esta preparado para calcular la tasa agregada entre
-            <code>Programa_de_Historial__c</code> y <code>hed__Application__c</code>,
-            con filtros por defecto y refresco manual.
-          </p>
-          <ul class="welcome-list">
-            <li>Login por Salesforce My Domain</li>
-            <li>SSO con Microsoft</li>
-            <li>Consultas con usuario de integracion</li>
-            <li>Segmentacion por asesor y programa</li>
-          </ul>
-        </section>
 
         <section id="dashboard-content" class="dashboard-content" hidden>
           <section class="section-card">

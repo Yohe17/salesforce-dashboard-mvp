@@ -7,8 +7,6 @@ const state = {
 const elements = {
   dashboardTitle: document.querySelector("#dashboard-title"),
   dashboardSubtitle: document.querySelector("#dashboard-subtitle"),
-  formulaText: document.querySelector("#formula-text"),
-  accessSummary: document.querySelector("#access-summary"),
   sessionStatus: document.querySelector("#session-status"),
   sessionUser: document.querySelector("#session-user"),
   lastUpdated: document.querySelector("#last-updated"),
@@ -16,7 +14,6 @@ const elements = {
   loginButton: document.querySelector("#login-button"),
   refreshButton: document.querySelector("#refresh-button"),
   logoutButton: document.querySelector("#logout-button"),
-  welcomeCard: document.querySelector("#welcome-card"),
   dashboardContent: document.querySelector("#dashboard-content"),
   kpiGrid: document.querySelector("#kpi-grid"),
   ownerChart: document.querySelector("#owner-chart"),
@@ -85,8 +82,7 @@ async function loadConfig() {
   state.config = await response.json();
   elements.dashboardTitle.textContent = state.config.title;
   elements.dashboardSubtitle.textContent = state.config.subtitle;
-  elements.formulaText.textContent = state.config.formula;
-  elements.accessSummary.textContent = `${state.config.accessMode.login}. ${state.config.accessMode.data}.`;
+  elements.dashboardSubtitle.hidden = !state.config.subtitle;
 }
 
 async function refreshDashboard() {
@@ -101,7 +97,7 @@ async function refreshDashboard() {
 
     state.dashboard = payload;
     elements.lastUpdated.textContent = formatTimestamp(payload.generatedAt);
-    renderMessage("Datos sincronizados desde Salesforce usando el usuario de integracion.");
+    renderMessage("");
     renderDashboard();
   } catch (error) {
     renderMessage(error.message);
@@ -113,7 +109,6 @@ async function refreshDashboard() {
 function updateSessionUi() {
   const authenticated = Boolean(state.session?.authenticated);
   const authReady = Boolean(state.session?.authConfigReady);
-  const integrationReady = Boolean(state.session?.integrationConfigReady);
 
   elements.loginButton.hidden = authenticated;
   elements.logoutButton.hidden = !authenticated;
@@ -126,16 +121,9 @@ function updateSessionUi() {
     return;
   }
 
-  if (!integrationReady) {
-    elements.sessionStatus.textContent = "Falta configurar integracion";
-    elements.sessionUser.textContent = "Revisa client id, client secret y que Client Credentials este habilitado.";
-    elements.refreshButton.disabled = true;
-    return;
-  }
-
   if (!authenticated) {
     elements.sessionStatus.textContent = "Sesion cerrada";
-    elements.sessionUser.textContent = "Ingresa con tu usuario Salesforce para abrir el panel.";
+    elements.sessionUser.textContent = "Ingresa con Salesforce para ver tu panel.";
     return;
   }
 
@@ -146,7 +134,6 @@ function updateSessionUi() {
 function renderDashboard() {
   const hasData = Boolean(state.dashboard);
   elements.dashboardContent.hidden = !hasData;
-  elements.welcomeCard.hidden = hasData;
 
   if (!hasData) {
     clearDashboardContainers();
@@ -203,7 +190,7 @@ function renderKpis() {
   elements.kpiGrid.innerHTML = "";
   state.dashboard.kpis.forEach((metric) => {
     const card = document.createElement("article");
-    card.className = metric.type === "percent" ? "kpi-card accent" : "kpi-card";
+    card.className = `kpi-card${buildKpiToneClass(metric)}`;
 
     const label = document.createElement("p");
     label.className = "kpi-label";
@@ -211,11 +198,35 @@ function renderKpis() {
 
     const value = document.createElement("p");
     value.className = "kpi-value";
-    value.textContent = metric.type === "percent" ? formatPercent(metric.value) : formatNumber(metric.value);
+    value.textContent = formatMetricValue(metric);
 
     card.append(label, value);
     elements.kpiGrid.append(card);
   });
+}
+
+function buildKpiToneClass(metric) {
+  if (!metric?.tone || metric.tone === "default") {
+    return "";
+  }
+
+  return ` ${metric.tone}`;
+}
+
+function formatMetricValue(metric) {
+  if (metric.type === "percent") {
+    return formatPercent(metric.value);
+  }
+
+  if (metric.type === "semaphore") {
+    if (metric.value === null || metric.value === undefined) {
+      return metric.icon || "—";
+    }
+
+    return `${metric.icon} ${formatPercent(metric.value)}`;
+  }
+
+  return formatNumber(metric.value);
 }
 
 function renderBarList(container, rows) {
@@ -312,6 +323,7 @@ function formatValueForColumn(column, value) {
 
 function renderMessage(message) {
   elements.globalMessage.textContent = message;
+  elements.globalMessage.hidden = !message;
 }
 
 function toggleLoading(isLoading) {
