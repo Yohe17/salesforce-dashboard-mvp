@@ -66,7 +66,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (requestUrl.pathname === "/api/dashboard/refresh" && req.method === "GET") {
-      return handleDashboardRefresh(req, res);
+      return handleDashboardRefresh(req, requestUrl, res);
     }
 
     if (requestUrl.pathname === "/auth/login" && req.method === "GET") {
@@ -209,7 +209,7 @@ async function handleDashboardConfig(req, res) {
   }
 }
 
-async function handleDashboardRefresh(req, res) {
+async function handleDashboardRefresh(req, requestUrl, res) {
   const session = getSessionFromRequest(req);
   if (!session) {
     return sendJson(res, 401, {
@@ -226,14 +226,24 @@ async function handleDashboardRefresh(req, res) {
   try {
     const config = await readDashboardConfig();
     const dateWindow = buildDateWindow(config.dateRange);
+    const selectedFilters = parseDashboardFilters(requestUrl.searchParams);
+    const dashboardUser = await enrichDashboardUser(session);
     const consultasRecords = await fetchAllRecords(session, buildQuery(config.consultas, dateWindow));
     const solicitudesRecords = await fetchAllRecords(session, buildQuery(config.solicitudes, dateWindow));
-    const dashboardUser = await enrichDashboardUser(session);
 
     const consultas = consultasRecords.map((record) => mapRecord(record, config.consultas));
     const solicitudes = solicitudesRecords.map((record) => mapRecord(record, config.solicitudes));
+    const ownerDirectory = await loadOwnerDirectory(session, consultas, solicitudes);
+    const filterOptions = buildFilterOptions(consultas, solicitudes, ownerDirectory);
+    const appliedFilters = resolveDashboardFilters(selectedFilters, filterOptions);
+    const filteredConsultas = applyDashboardFilters(consultas, appliedFilters);
+    const filteredSolicitudes = applyDashboardFilters(solicitudes, appliedFilters);
 
-    sendJson(res, 200, buildDashboardPayload(config, dateWindow, consultas, solicitudes, dashboardUser));
+    sendJson(
+      res,
+      200,
+      buildDashboardPayload(config, dateWindow, filteredConsultas, filteredSolicitudes, dashboardUser, ownerDirectory, filterOptions, appliedFilters)
+    );
   } catch (error) {
     console.error("Dashboard refresh failed", error);
     sendJson(res, 500, {
@@ -619,6 +629,7 @@ async function fetchJson(url, options = {}) {
 
 function mapRecord(record, objectConfig) {
   const owner = getNestedValue(record, objectConfig.ownerField) || "Sin owner";
+  const ownerId = getNestedValue(record, "OwnerId") || "";
   const programId = getNestedValue(record, objectConfig.programIdField) || "";
   const programName = getNestedValue(record, objectConfig.programNameField) || "Sin programa";
   const dateValue = getNestedValue(record, objectConfig.dateField) || "";
@@ -626,6 +637,7 @@ function mapRecord(record, objectConfig) {
   return {
     id: record.Id,
     owner,
+    ownerId,
     programId,
     programName,
     dateValue,
@@ -702,26 +714,150 @@ function buildComplianceStatus(value) {
   };
 }
 
-function buildDashboardPayload(config, dateWindow, consultas, solicitudes, user) {
+async function loadOwnerDirectory(session, consultas, solicitudes) {
+  const ownerIds = uniqueValues(
+    [...consultas, ...solicitudes]
+      .map((row) => row.ownerId)
+      .filter(Boolean)
+  );
+
+  if (!ownerIds.length) {
+    return new Map();
+  }
+
+  try {
+    const records = await fetchUsersByIds(session, ownerIds);
+    return new Map(
+      records.map((record) => {
+        const objetivoPercent = normalizePercentValue(record.Objetivo__c);
+        return [
+          record.Id,
+          {
+            id: record.Id,
+            name: record.Name || "Sin owner",
+            username: record.Username || "",
+            email: record.Email || "",
+            objetivoPercent,
+            semaphore: buildComplianceStatus(objetivoPercent)
+          }
+        ];
+      })
+    );
+  } catch (error) {
+    return new Map();
+  }
+}
+
+async function fetchUsersByIds(session, ownerIds) {
+  const chunkSize = 100;
+  const records = [];
+
+  for (let index = 0; index < ownerIds.length; index += chunkSize) {
+    const chunk = ownerIds.slice(index, index + chunkSize);
+    const values = chunk.map((id) => `'${escapeSoqlString(id)}'`).join(", ");
+    const soql = `SELECT Id, Name, Username, Email, Objetivo__c FROM User WHERE Id IN (${values})`;
+    const response = await fetchAllRecords(session, soql);
+    records.push(...response);
+  }
+
+  return records;
+}
+
+function parseDashboardFilters(searchParams) {
+  return {
+    owner: normalizeFilterValue(searchParams.get("owner")),
+    program: normalizeFilterValue(searchParams.get("program"))
+  };
+}
+
+function normalizeFilterValue(value) {
+  if (!value || value === "all") {
+    return "all";
+  }
+
+  return value;
+}
+
+function buildFilterOptions(consultas, solicitudes, ownerDirectory) {
+  const owners = new Map();
+  const programs = new Map();
+
+  for (const row of [...consultas, ...solicitudes]) {
+    const ownerKey = row.ownerId || row.owner;
+    if (ownerKey && !owners.has(ownerKey)) {
+      owners.set(ownerKey, {
+        value: ownerKey,
+        label: ownerDirectory.get(row.ownerId)?.name || row.owner
+      });
+    }
+
+    const programKey = row.programId || row.programName;
+    if (programKey && !programs.has(programKey)) {
+      programs.set(programKey, {
+        value: programKey,
+        label: row.programName
+      });
+    }
+  }
+
+  return {
+    owners: [{ value: "all", label: "Todos" }, ...sortFilterOptions([...owners.values()])],
+    programs: [{ value: "all", label: "Todos" }, ...sortFilterOptions([...programs.values()])]
+  };
+}
+
+function sortFilterOptions(options) {
+  return options.sort((left, right) => left.label.localeCompare(right.label, "es"));
+}
+
+function resolveDashboardFilters(selectedFilters, filterOptions) {
+  const ownerAllowed = filterOptions.owners.some((option) => option.value === selectedFilters.owner);
+  const programAllowed = filterOptions.programs.some((option) => option.value === selectedFilters.program);
+
+  return {
+    owner: ownerAllowed ? selectedFilters.owner : "all",
+    program: programAllowed ? selectedFilters.program : "all"
+  };
+}
+
+function applyDashboardFilters(rows, filters) {
+  return rows.filter((row) => {
+    const ownerKey = row.ownerId || row.owner;
+    const programKey = row.programId || row.programName;
+    const ownerMatches = filters.owner === "all" || ownerKey === filters.owner;
+    const programMatches = filters.program === "all" || programKey === filters.program;
+    return ownerMatches && programMatches;
+  });
+}
+
+function buildDashboardPayload(config, dateWindow, consultas, solicitudes, user, ownerDirectory, filterOptions, appliedFilters) {
   const byOwner = buildSeries(consultas, solicitudes, (row) => ({
-    key: row.owner,
-    label: row.owner
+    key: row.ownerId || row.owner,
+    label: row.owner,
+    owner: row.owner,
+    ownerId: row.ownerId
   }));
   const byProgram = buildSeries(consultas, solicitudes, (row) => ({
     key: row.programId || row.programName,
-    label: row.programName
+    label: row.programName,
+    programName: row.programName,
+    programId: row.programId
   }));
   const byOwnerProgram = buildSeries(consultas, solicitudes, (row) => ({
-    key: `${row.owner}::${row.programId || row.programName}`,
+    key: `${row.ownerId || row.owner}::${row.programId || row.programName}`,
     label: `${row.owner} · ${row.programName}`,
     owner: row.owner,
-    programName: row.programName
+    ownerId: row.ownerId,
+    programName: row.programName,
+    programId: row.programId
   }));
 
   const consultasCount = consultas.length;
   const solicitudesCount = solicitudes.length;
   const conversionRate = computeRate(solicitudesCount, consultasCount);
-  const complianceValue = normalizePercentValue(user?.objetivoPercent);
+  const ownersWithCompliance = byOwner.map((row) => attachOwnerCompliance(row, ownerDirectory));
+  const ownerProgramWithCompliance = byOwnerProgram.map((row) => attachOwnerCompliance(row, ownerDirectory));
+  const complianceValue = averageCompliance(ownersWithCompliance);
   const complianceStatus = buildComplianceStatus(complianceValue);
 
   return {
@@ -733,6 +869,8 @@ function buildDashboardPayload(config, dateWindow, consultas, solicitudes, user)
       ...user,
       objetivoPercent: complianceValue
     },
+    activeFilters: appliedFilters,
+    filterOptions,
     kpis: [
       {
         label: "Consultas",
@@ -769,13 +907,13 @@ function buildDashboardPayload(config, dateWindow, consultas, solicitudes, user)
       }
     ],
     charts: {
-      byOwner: byOwner.slice(0, 8),
+      byOwner: ownersWithCompliance.slice(0, 8),
       byProgram: byProgram.slice(0, 8)
     },
     tables: {
-      byOwner,
+      byOwner: ownersWithCompliance,
       byProgram,
-      byOwnerProgram
+      byOwnerProgram: ownerProgramWithCompliance
     },
     samples: {
       consultas: consultas.slice(0, 8).map((row) => ({
@@ -832,10 +970,52 @@ function createSeriesEntry(info) {
     key: info.key,
     label: info.label,
     owner: info.owner || "",
+    ownerId: info.ownerId || "",
     programName: info.programName || "",
+    programId: info.programId || "",
     consultas: 0,
     solicitudes: 0
   };
+}
+
+function attachOwnerCompliance(row, ownerDirectory) {
+  const ownerMeta = ownerDirectory.get(row.ownerId || "");
+  const objetivoPercent = ownerMeta?.objetivoPercent ?? null;
+  const semaphore = ownerMeta?.semaphore || buildComplianceStatus(objetivoPercent);
+
+  return {
+    ...row,
+    objetivoPercent,
+    semaforo: buildSemaphoreLabel(semaphore, objetivoPercent)
+  };
+}
+
+function buildSemaphoreLabel(semaphore, objetivoPercent) {
+  if (objetivoPercent === null) {
+    return semaphore.icon || "—";
+  }
+
+  return `${semaphore.icon} ${formatPercentValue(objetivoPercent)}`;
+}
+
+function averageCompliance(rows) {
+  const values = rows
+    .map((row) => row.objetivoPercent)
+    .filter((value) => value !== null && value !== undefined);
+
+  if (!values.length) {
+    return null;
+  }
+
+  const total = values.reduce((sum, value) => sum + value, 0);
+  return Number((total / values.length).toFixed(2));
+}
+
+function formatPercentValue(value) {
+  return `${new Intl.NumberFormat("es-AR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(value || 0)}%`;
 }
 
 function computeRate(solicitudes, consultas) {

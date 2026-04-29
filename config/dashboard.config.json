@@ -15,6 +15,7 @@
     "programNameField": "Programa__r.Name",
     "fields": [
       "Id",
+      "OwnerId",
       "CreatedDate",
       "Owner.Name",
       "Programa__c",
@@ -49,6 +50,7 @@
     "programNameField": "hed__Applying_To__r.Name",
     "fields": [
       "Id",
+      "OwnerId",
       "FechaPlazo__c",
       "Owner.Name",
       "hed__Applying_To__c",

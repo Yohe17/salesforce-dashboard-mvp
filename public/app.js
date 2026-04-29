@@ -1,7 +1,11 @@
 const state = {
   session: null,
   config: null,
-  dashboard: null
+  dashboard: null,
+  filters: {
+    owner: "all",
+    program: "all"
+  }
 };
 
 const elements = {
@@ -14,6 +18,8 @@ const elements = {
   loginButton: document.querySelector("#login-button"),
   refreshButton: document.querySelector("#refresh-button"),
   logoutButton: document.querySelector("#logout-button"),
+  ownerFilter: document.querySelector("#owner-filter"),
+  programFilter: document.querySelector("#program-filter"),
   dashboardContent: document.querySelector("#dashboard-content"),
   kpiGrid: document.querySelector("#kpi-grid"),
   ownerChart: document.querySelector("#owner-chart"),
@@ -37,6 +43,16 @@ elements.refreshButton.addEventListener("click", async () => {
   await refreshDashboard();
 });
 
+elements.ownerFilter.addEventListener("change", async (event) => {
+  state.filters.owner = event.target.value;
+  await refreshDashboard();
+});
+
+elements.programFilter.addEventListener("change", async (event) => {
+  state.filters.program = event.target.value;
+  await refreshDashboard();
+});
+
 elements.logoutButton.addEventListener("click", async () => {
   await fetch("/auth/logout", {
     method: "POST"
@@ -45,6 +61,10 @@ elements.logoutButton.addEventListener("click", async () => {
   state.session = null;
   state.config = null;
   state.dashboard = null;
+  state.filters = {
+    owner: "all",
+    program: "all"
+  };
   updateSessionUi();
   renderDashboard();
 });
@@ -89,15 +109,24 @@ async function refreshDashboard() {
   toggleLoading(true);
 
   try {
-    const response = await fetch("/api/dashboard/refresh");
+    const searchParams = new URLSearchParams();
+    searchParams.set("owner", state.filters.owner || "all");
+    searchParams.set("program", state.filters.program || "all");
+
+    const response = await fetch(`/api/dashboard/refresh?${searchParams.toString()}`);
     const payload = await response.json();
     if (!response.ok) {
       throw new Error(payload.error || "No se pudo actualizar");
     }
 
     state.dashboard = payload;
+    state.filters = {
+      owner: payload.activeFilters?.owner || "all",
+      program: payload.activeFilters?.program || "all"
+    };
     elements.lastUpdated.textContent = formatTimestamp(payload.generatedAt);
     renderMessage("");
+    renderFilterControls(payload.filterOptions, state.filters);
     renderDashboard();
   } catch (error) {
     renderMessage(error.message);
@@ -113,6 +142,8 @@ function updateSessionUi() {
   elements.loginButton.hidden = authenticated;
   elements.logoutButton.hidden = !authenticated;
   elements.refreshButton.disabled = !authenticated;
+  elements.ownerFilter.disabled = !authenticated;
+  elements.programFilter.disabled = !authenticated;
 
   if (!authReady) {
     elements.sessionStatus.textContent = "Falta configurar login";
@@ -143,8 +174,9 @@ function renderDashboard() {
   renderKpis();
   renderBarList(elements.ownerChart, state.dashboard.charts.byOwner);
   renderBarList(elements.programChart, state.dashboard.charts.byProgram);
-  renderTable(elements.ownerTable, ["label", "consultas", "solicitudes", "tasa"], state.dashboard.tables.byOwner, {
+  renderTable(elements.ownerTable, ["label", "semaforo", "consultas", "solicitudes", "tasa"], state.dashboard.tables.byOwner, {
     label: "Asesor",
+    semaforo: "Semaforo",
     consultas: "Consultas",
     solicitudes: "Solicitudes",
     tasa: "Tasa"
@@ -203,6 +235,24 @@ function renderKpis() {
     card.append(label, value);
     elements.kpiGrid.append(card);
   });
+}
+
+function renderFilterControls(filterOptions = {}, activeFilters = {}) {
+  syncSelectOptions(elements.ownerFilter, filterOptions.owners || [{ value: "all", label: "Todos" }], activeFilters.owner || "all");
+  syncSelectOptions(elements.programFilter, filterOptions.programs || [{ value: "all", label: "Todos" }], activeFilters.program || "all");
+}
+
+function syncSelectOptions(select, options, selectedValue) {
+  select.innerHTML = "";
+
+  options.forEach((option) => {
+    const node = document.createElement("option");
+    node.value = option.value;
+    node.textContent = option.label;
+    select.append(node);
+  });
+
+  select.value = options.some((option) => option.value === selectedValue) ? selectedValue : "all";
 }
 
 function buildKpiToneClass(metric) {
@@ -328,6 +378,8 @@ function renderMessage(message) {
 
 function toggleLoading(isLoading) {
   elements.refreshButton.disabled = isLoading || !state.session?.authenticated;
+  elements.ownerFilter.disabled = isLoading || !state.session?.authenticated;
+  elements.programFilter.disabled = isLoading || !state.session?.authenticated;
   elements.refreshButton.textContent = isLoading ? "Actualizando..." : "Actualizar ahora";
 }
 

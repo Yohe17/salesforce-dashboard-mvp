@@ -368,6 +368,41 @@ code {
   gap: 24px;
 }
 
+.toolbar-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.control-field {
+  display: grid;
+  gap: 10px;
+}
+
+.control-field span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.control-field select {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(184, 146, 103, 0.22);
+  background: rgba(255, 252, 248, 0.96);
+  color: var(--surface-dark);
+  font: inherit;
+  box-shadow: 0 8px 18px rgba(19, 40, 61, 0.05);
+}
+
+.control-field select:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
 .chart-layout,
 .table-layout {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -565,6 +600,7 @@ td {
   .shell,
   .chart-layout,
   .table-layout,
+  .toolbar-grid,
   .filters-grid,
   .hero {
     grid-template-columns: 1fr;
