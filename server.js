@@ -66,7 +66,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (requestUrl.pathname === "/api/dashboard/refresh" && req.method === "GET") {
-      return handleDashboardRefresh(req, requestUrl, res);
+      return handleDashboardRefresh(req, res);
     }
 
     if (requestUrl.pathname === "/auth/login" && req.method === "GET") {
@@ -209,7 +209,7 @@ async function handleDashboardConfig(req, res) {
   }
 }
 
-async function handleDashboardRefresh(req, requestUrl, res) {
+async function handleDashboardRefresh(req, res) {
   const session = getSessionFromRequest(req);
   if (!session) {
     return sendJson(res, 401, {
@@ -227,7 +227,6 @@ async function handleDashboardRefresh(req, requestUrl, res) {
     const config = await readDashboardConfig();
     const dateWindow = buildDateWindow(config.dateRange);
     const historyWindow = buildHistoricalDateWindow(dateWindow.currentYear, 4);
-    const selectedFilters = parseDashboardFilters(requestUrl.searchParams);
     const dashboardUser = await enrichDashboardUser(session);
     const consultasRecords = await fetchAllRecords(session, buildQuery(config.consultas, dateWindow));
     const solicitudesRecords = await fetchAllRecords(session, buildQuery(config.solicitudes, dateWindow));
@@ -237,11 +236,6 @@ async function handleDashboardRefresh(req, requestUrl, res) {
     const solicitudes = solicitudesRecords.map((record) => mapRecord(record, config.solicitudes));
     const solicitudesHistory = solicitudesHistoryRecords.map((record) => mapRecord(record, config.solicitudes));
     const ownerDirectory = await loadOwnerDirectory(session, consultas, solicitudes);
-    const filterOptions = buildFilterOptions(consultas, solicitudes, ownerDirectory);
-    const appliedFilters = resolveDashboardFilters(selectedFilters, filterOptions);
-    const filteredConsultas = applyDashboardFilters(consultas, appliedFilters);
-    const filteredSolicitudes = applyDashboardFilters(solicitudes, appliedFilters);
-    const filteredSolicitudesHistory = applyDashboardFilters(solicitudesHistory, appliedFilters);
 
     sendJson(
       res,
@@ -249,13 +243,11 @@ async function handleDashboardRefresh(req, requestUrl, res) {
       buildDashboardPayload(
         config,
         dateWindow,
-        filteredConsultas,
-        filteredSolicitudes,
-        filteredSolicitudesHistory,
+        consultas,
+        solicitudes,
+        solicitudesHistory,
         dashboardUser,
-        ownerDirectory,
-        filterOptions,
-        appliedFilters
+        ownerDirectory
       )
     );
   } catch (error) {
@@ -777,21 +769,6 @@ async function fetchUsersByIds(session, ownerIds) {
   return records;
 }
 
-function parseDashboardFilters(searchParams) {
-  return {
-    owner: normalizeFilterValue(searchParams.get("owner")),
-    program: normalizeFilterValue(searchParams.get("program"))
-  };
-}
-
-function normalizeFilterValue(value) {
-  if (!value || value === "all") {
-    return "all";
-  }
-
-  return value;
-}
-
 function buildFilterOptions(consultas, solicitudes, ownerDirectory) {
   const owners = new Map();
   const programs = new Map();
@@ -824,27 +801,7 @@ function sortFilterOptions(options) {
   return options.sort((left, right) => left.label.localeCompare(right.label, "es"));
 }
 
-function resolveDashboardFilters(selectedFilters, filterOptions) {
-  const ownerAllowed = filterOptions.owners.some((option) => option.value === selectedFilters.owner);
-  const programAllowed = filterOptions.programs.some((option) => option.value === selectedFilters.program);
-
-  return {
-    owner: ownerAllowed ? selectedFilters.owner : "all",
-    program: programAllowed ? selectedFilters.program : "all"
-  };
-}
-
-function applyDashboardFilters(rows, filters) {
-  return rows.filter((row) => {
-    const ownerKey = row.ownerId || row.owner;
-    const programKey = row.programId || row.programName;
-    const ownerMatches = filters.owner === "all" || ownerKey === filters.owner;
-    const programMatches = filters.program === "all" || programKey === filters.program;
-    return ownerMatches && programMatches;
-  });
-}
-
-function buildDashboardPayload(config, dateWindow, consultas, solicitudes, solicitudesHistory, user, ownerDirectory, filterOptions, appliedFilters) {
+function buildDashboardPayload(config, dateWindow, consultas, solicitudes, solicitudesHistory, user, ownerDirectory) {
   const byOwner = buildSeries(consultas, solicitudes, (row) => ({
     key: row.ownerId || row.owner,
     label: row.owner,
@@ -874,6 +831,11 @@ function buildDashboardPayload(config, dateWindow, consultas, solicitudes, solic
   const complianceValue = averageCompliance(ownersWithCompliance);
   const complianceStatus = buildComplianceStatus(complianceValue);
   const programComparison = buildProgramComparison(solicitudesHistory, dateWindow.currentYear);
+  const filterOptions = buildFilterOptions(consultas, solicitudes, ownerDirectory);
+  const activeFilters = {
+    owner: "all",
+    program: "all"
+  };
 
   return {
     title: config.title,
@@ -884,7 +846,7 @@ function buildDashboardPayload(config, dateWindow, consultas, solicitudes, solic
       ...user,
       objetivoPercent: complianceValue
     },
-    activeFilters: appliedFilters,
+    activeFilters,
     filterOptions,
     kpis: [
       {
@@ -930,6 +892,19 @@ function buildDashboardPayload(config, dateWindow, consultas, solicitudes, solic
       byProgram,
       byOwnerProgram: ownerProgramWithCompliance,
       programComparison
+    },
+    source: {
+      generatedAt: new Date().toISOString(),
+      dateWindow,
+      user: {
+        ...user,
+        objetivoPercent: complianceValue
+      },
+      consultas,
+      solicitudes,
+      solicitudesHistory,
+      ownerDirectory: [...ownerDirectory.values()],
+      filterOptions
     },
     samples: {
       consultas: consultas.slice(0, 8).map((row) => ({

@@ -2,6 +2,7 @@ const state = {
   session: null,
   config: null,
   dashboard: null,
+  source: null,
   filters: {
     owner: "all",
     program: "all"
@@ -45,12 +46,12 @@ elements.refreshButton.addEventListener("click", async () => {
 
 elements.ownerFilter.addEventListener("change", async (event) => {
   state.filters.owner = event.target.value;
-  await refreshDashboard();
+  recomputeDashboard();
 });
 
 elements.programFilter.addEventListener("change", async (event) => {
   state.filters.program = event.target.value;
-  await refreshDashboard();
+  recomputeDashboard();
 });
 
 elements.logoutButton.addEventListener("click", async () => {
@@ -61,6 +62,7 @@ elements.logoutButton.addEventListener("click", async () => {
   state.session = null;
   state.config = null;
   state.dashboard = null;
+  state.source = null;
   state.filters = {
     owner: "all",
     program: "all"
@@ -109,25 +111,16 @@ async function refreshDashboard() {
   toggleLoading(true);
 
   try {
-    const searchParams = new URLSearchParams();
-    searchParams.set("owner", state.filters.owner || "all");
-    searchParams.set("program", state.filters.program || "all");
-
-    const response = await fetch(`/api/dashboard/refresh?${searchParams.toString()}`);
+    const response = await fetch("/api/dashboard/refresh");
     const payload = await response.json();
     if (!response.ok) {
       throw new Error(payload.error || "No se pudo actualizar");
     }
 
-    state.dashboard = payload;
-    state.filters = {
-      owner: payload.activeFilters?.owner || "all",
-      program: payload.activeFilters?.program || "all"
-    };
-    elements.lastUpdated.textContent = formatTimestamp(payload.generatedAt);
+    state.source = payload.source;
+    elements.lastUpdated.textContent = formatTimestamp(payload.source?.generatedAt || payload.generatedAt);
     renderMessage("");
-    renderFilterControls(payload.filterOptions, state.filters);
-    renderDashboard();
+    recomputeDashboard();
   } catch (error) {
     renderMessage(error.message);
   } finally {
@@ -200,6 +193,36 @@ function renderDashboard() {
   renderTable(elements.solicitudesSample, ["Fecha", "Owner", "Programa", "Tipo Programa"], state.dashboard.samples.solicitudes);
 }
 
+function recomputeDashboard() {
+  if (!state.source) {
+    state.dashboard = null;
+    renderDashboard();
+    return;
+  }
+
+  const ownerDirectory = createOwnerDirectoryMap(state.source.ownerDirectory || []);
+  const filterOptions = state.source.filterOptions || buildFilterOptionsClient(state.source.consultas, state.source.solicitudes, ownerDirectory);
+  const appliedFilters = resolveDashboardFiltersClient(state.filters, filterOptions);
+  const filteredConsultas = applyDashboardFiltersClient(state.source.consultas, appliedFilters);
+  const filteredSolicitudes = applyDashboardFiltersClient(state.source.solicitudes, appliedFilters);
+  const filteredSolicitudesHistory = applyDashboardFiltersClient(state.source.solicitudesHistory, appliedFilters);
+
+  state.filters = appliedFilters;
+  state.dashboard = buildDashboardView(
+    state.source.dateWindow,
+    filteredConsultas,
+    filteredSolicitudes,
+    filteredSolicitudesHistory,
+    state.source.user,
+    ownerDirectory,
+    filterOptions,
+    appliedFilters
+  );
+
+  renderFilterControls(filterOptions, appliedFilters);
+  renderDashboard();
+}
+
 function clearDashboardContainers() {
   [
     elements.kpiGrid,
@@ -258,6 +281,381 @@ function buildKpiToneClass(metric) {
   }
 
   return ` ${metric.tone}`;
+}
+
+function createOwnerDirectoryMap(entries) {
+  return new Map(
+    entries.map((entry) => [
+      entry.id,
+      entry
+    ])
+  );
+}
+
+function buildFilterOptionsClient(consultas, solicitudes, ownerDirectory) {
+  const owners = new Map();
+  const programs = new Map();
+
+  for (const row of [...consultas, ...solicitudes]) {
+    const ownerKey = row.ownerId || row.owner;
+    if (ownerKey && !owners.has(ownerKey)) {
+      owners.set(ownerKey, {
+        value: ownerKey,
+        label: ownerDirectory.get(row.ownerId)?.name || row.owner
+      });
+    }
+
+    const programKey = row.programId || row.programName;
+    if (programKey && !programs.has(programKey)) {
+      programs.set(programKey, {
+        value: programKey,
+        label: row.programName
+      });
+    }
+  }
+
+  return {
+    owners: [{ value: "all", label: "Todos" }, ...sortFilterOptionsClient([...owners.values()])],
+    programs: [{ value: "all", label: "Todos" }, ...sortFilterOptionsClient([...programs.values()])]
+  };
+}
+
+function sortFilterOptionsClient(options) {
+  return options.sort((left, right) => left.label.localeCompare(right.label, "es"));
+}
+
+function resolveDashboardFiltersClient(selectedFilters, filterOptions) {
+  const ownerAllowed = filterOptions.owners.some((option) => option.value === selectedFilters.owner);
+  const programAllowed = filterOptions.programs.some((option) => option.value === selectedFilters.program);
+
+  return {
+    owner: ownerAllowed ? selectedFilters.owner : "all",
+    program: programAllowed ? selectedFilters.program : "all"
+  };
+}
+
+function applyDashboardFiltersClient(rows, filters) {
+  return rows.filter((row) => {
+    const ownerKey = row.ownerId || row.owner;
+    const programKey = row.programId || row.programName;
+    const ownerMatches = filters.owner === "all" || ownerKey === filters.owner;
+    const programMatches = filters.program === "all" || programKey === filters.program;
+    return ownerMatches && programMatches;
+  });
+}
+
+function buildDashboardView(dateWindow, consultas, solicitudes, solicitudesHistory, user, ownerDirectory, filterOptions, activeFilters) {
+  const byOwner = buildSeriesClient(consultas, solicitudes, (row) => ({
+    key: row.ownerId || row.owner,
+    label: row.owner,
+    owner: row.owner,
+    ownerId: row.ownerId
+  }));
+  const byProgram = buildSeriesClient(consultas, solicitudes, (row) => ({
+    key: row.programId || row.programName,
+    label: row.programName,
+    programName: row.programName,
+    programId: row.programId
+  }));
+
+  const consultasCount = consultas.length;
+  const solicitudesCount = solicitudes.length;
+  const conversionRate = computeRateClient(solicitudesCount, consultasCount);
+  const ownersWithCompliance = byOwner.map((row) => attachOwnerComplianceClient(row, ownerDirectory));
+  const complianceValue = averageComplianceClient(ownersWithCompliance);
+  const complianceStatus = buildComplianceStatusClient(complianceValue);
+  const programComparison = buildProgramComparisonClient(solicitudesHistory, dateWindow.currentYear);
+
+  return {
+    generatedAt: state.source.generatedAt,
+    dateWindow,
+    user: {
+      ...user,
+      objetivoPercent: complianceValue
+    },
+    activeFilters,
+    filterOptions,
+    kpis: [
+      {
+        label: "Consultas",
+        value: consultasCount,
+        tone: "default"
+      },
+      {
+        label: "Solicitudes",
+        value: solicitudesCount,
+        tone: "default"
+      },
+      {
+        label: "Tasa de conversion",
+        value: conversionRate,
+        type: "percent",
+        tone: "accent"
+      },
+      {
+        label: "Semaforo de cumplimiento",
+        value: complianceValue,
+        type: "semaphore",
+        icon: complianceStatus.icon,
+        tone: complianceStatus.tone
+      },
+      {
+        label: "Owners cubiertos",
+        value: byOwner.length,
+        tone: "default"
+      },
+      {
+        label: "Programas cubiertos",
+        value: byProgram.length,
+        tone: "default"
+      }
+    ],
+    charts: {
+      byOwner: ownersWithCompliance.slice(0, 8),
+      byProgram: byProgram.slice(0, 8)
+    },
+    tables: {
+      byOwner: ownersWithCompliance,
+      byProgram,
+      programComparison
+    },
+    samples: {
+      consultas: consultas.slice(0, 8).map((row) => ({
+        Fecha: row.dateValue,
+        Owner: row.owner,
+        Programa: row.programName,
+        Origen: row.raw["Origen_de_la_consulta__c"] || "—"
+      })),
+      solicitudes: solicitudes.slice(0, 8).map((row) => ({
+        Fecha: row.dateValue,
+        Owner: row.owner,
+        Programa: row.programName,
+        "Tipo Programa": row.raw["Tipo_de_Programa__c"] || "—"
+      }))
+    }
+  };
+}
+
+function buildSeriesClient(consultas, solicitudes, descriptor) {
+  const aggregate = new Map();
+
+  for (const row of consultas) {
+    const info = descriptor(row);
+    const item = aggregate.get(info.key) || createSeriesEntryClient(info);
+    item.consultas += 1;
+    aggregate.set(info.key, item);
+  }
+
+  for (const row of solicitudes) {
+    const info = descriptor(row);
+    const item = aggregate.get(info.key) || createSeriesEntryClient(info);
+    item.solicitudes += 1;
+    aggregate.set(info.key, item);
+  }
+
+  return [...aggregate.values()]
+    .map((item) => ({
+      ...item,
+      tasa: computeRateClient(item.solicitudes, item.consultas)
+    }))
+    .sort((left, right) => {
+      if (right.consultas !== left.consultas) {
+        return right.consultas - left.consultas;
+      }
+      if (right.solicitudes !== left.solicitudes) {
+        return right.solicitudes - left.solicitudes;
+      }
+      return left.label.localeCompare(right.label, "es");
+    });
+}
+
+function createSeriesEntryClient(info) {
+  return {
+    key: info.key,
+    label: info.label,
+    owner: info.owner || "",
+    ownerId: info.ownerId || "",
+    programName: info.programName || "",
+    programId: info.programId || "",
+    consultas: 0,
+    solicitudes: 0
+  };
+}
+
+function attachOwnerComplianceClient(row, ownerDirectory) {
+  const ownerMeta = ownerDirectory.get(row.ownerId || "");
+  const objetivoPercent = ownerMeta?.objetivoPercent ?? null;
+  const semaphore = ownerMeta?.semaphore || buildComplianceStatusClient(objetivoPercent);
+
+  return {
+    ...row,
+    objetivoPercent,
+    semaforo: buildSemaphoreLabelClient(semaphore, objetivoPercent)
+  };
+}
+
+function buildSemaphoreLabelClient(semaphore, objetivoPercent) {
+  if (objetivoPercent === null) {
+    return semaphore.icon || "—";
+  }
+
+  return `${semaphore.icon} ${formatPercent(objetivoPercent)}`;
+}
+
+function averageComplianceClient(rows) {
+  const values = rows
+    .map((row) => row.objetivoPercent)
+    .filter((value) => value !== null && value !== undefined);
+
+  if (!values.length) {
+    return null;
+  }
+
+  const total = values.reduce((sum, value) => sum + value, 0);
+  return Number((total / values.length).toFixed(2));
+}
+
+function buildComplianceStatusClient(value) {
+  if (value === null) {
+    return {
+      icon: "—",
+      tone: "neutral"
+    };
+  }
+
+  if (value < 30) {
+    return {
+      icon: "🔴",
+      tone: "danger"
+    };
+  }
+
+  if (value > 70) {
+    return {
+      icon: "🟢",
+      tone: "success"
+    };
+  }
+
+  return {
+    icon: "🟡",
+    tone: "warning"
+  };
+}
+
+function buildProgramComparisonClient(rows, currentYear) {
+  const years = [currentYear - 3, currentYear - 2, currentYear - 1, currentYear];
+  const aggregate = new Map();
+
+  rows.forEach((row) => {
+    const year = extractYearClient(row.dateValue);
+    if (!year || !years.includes(year)) {
+      return;
+    }
+
+    const key = row.programId || row.programName;
+    const item = aggregate.get(key) || {
+      key,
+      programName: row.programName,
+      counts: {}
+    };
+    item.counts[year] = (item.counts[year] || 0) + 1;
+    aggregate.set(key, item);
+  });
+
+  const [year1, year2, year3, year4] = years;
+  const rowsFormatted = [...aggregate.values()]
+    .map((item) => {
+      const count1 = item.counts[year1] || 0;
+      const count2 = item.counts[year2] || 0;
+      const count3 = item.counts[year3] || 0;
+      const count4 = item.counts[year4] || 0;
+
+      return {
+        programName: item.programName,
+        [String(year1)]: count1 || "",
+        [String(year2)]: count2 || "",
+        [`${year2}Delta`]: formatProgramDeltaClient(count1, count2, false),
+        [String(year3)]: count3 || "",
+        [`${year3}Delta`]: formatProgramDeltaClient(count2, count3, false),
+        [`solicitudes${year4}`]: count4 || "",
+        [`${year4}Delta`]: formatProgramDeltaClient(count3, count4, true)
+      };
+    })
+    .sort((left, right) => {
+      const rightCurrent = Number(right[`solicitudes${year4}`] || 0);
+      const leftCurrent = Number(left[`solicitudes${year4}`] || 0);
+      if (rightCurrent !== leftCurrent) {
+        return rightCurrent - leftCurrent;
+      }
+
+      const rightPrevious = Number(right[String(year3)] || 0);
+      const leftPrevious = Number(left[String(year3)] || 0);
+      if (rightPrevious !== leftPrevious) {
+        return rightPrevious - leftPrevious;
+      }
+
+      return left.programName.localeCompare(right.programName, "es");
+    });
+
+  return {
+    columns: [
+      "programName",
+      String(year1),
+      String(year2),
+      `${year2}Delta`,
+      String(year3),
+      `${year3}Delta`,
+      `solicitudes${year4}`,
+      `${year4}Delta`
+    ],
+    labels: {
+      programName: "Programa",
+      [String(year1)]: String(year1),
+      [String(year2)]: String(year2),
+      [`${year2}Delta`]: `${year2} vs ${year1}`,
+      [String(year3)]: String(year3),
+      [`${year3}Delta`]: `${year3} vs ${year2}`,
+      [`solicitudes${year4}`]: `Solicitudes ${year4}`,
+      [`${year4}Delta`]: `${year4} vs ${year3}`
+    },
+    numericColumns: [
+      String(year1),
+      String(year2),
+      String(year3),
+      `solicitudes${year4}`
+    ],
+    rows: rowsFormatted
+  };
+}
+
+function extractYearClient(value) {
+  const match = String(value || "").match(/^(\d{4})-/);
+  return match ? Number(match[1]) : 0;
+}
+
+function formatProgramDeltaClient(previousCount, currentCount, isCurrentYearComparison) {
+  if (!previousCount && !currentCount) {
+    return "—";
+  }
+
+  if (!previousCount && currentCount) {
+    return isCurrentYearComparison ? "Primera edicion" : "No dictado previamente";
+  }
+
+  if (previousCount && !currentCount) {
+    return "-100,00%";
+  }
+
+  return formatPercent(((currentCount - previousCount) / previousCount) * 100);
+}
+
+function computeRateClient(solicitudes, consultas) {
+  if (!consultas) {
+    return 0;
+  }
+
+  return Number(((solicitudes / consultas) * 100).toFixed(2));
 }
 
 function formatMetricValue(metric) {
