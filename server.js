@@ -226,23 +226,37 @@ async function handleDashboardRefresh(req, requestUrl, res) {
   try {
     const config = await readDashboardConfig();
     const dateWindow = buildDateWindow(config.dateRange);
+    const historyWindow = buildHistoricalDateWindow(dateWindow.currentYear, 4);
     const selectedFilters = parseDashboardFilters(requestUrl.searchParams);
     const dashboardUser = await enrichDashboardUser(session);
     const consultasRecords = await fetchAllRecords(session, buildQuery(config.consultas, dateWindow));
     const solicitudesRecords = await fetchAllRecords(session, buildQuery(config.solicitudes, dateWindow));
+    const solicitudesHistoryRecords = await fetchAllRecords(session, buildQuery(config.solicitudes, historyWindow));
 
     const consultas = consultasRecords.map((record) => mapRecord(record, config.consultas));
     const solicitudes = solicitudesRecords.map((record) => mapRecord(record, config.solicitudes));
+    const solicitudesHistory = solicitudesHistoryRecords.map((record) => mapRecord(record, config.solicitudes));
     const ownerDirectory = await loadOwnerDirectory(session, consultas, solicitudes);
     const filterOptions = buildFilterOptions(consultas, solicitudes, ownerDirectory);
     const appliedFilters = resolveDashboardFilters(selectedFilters, filterOptions);
     const filteredConsultas = applyDashboardFilters(consultas, appliedFilters);
     const filteredSolicitudes = applyDashboardFilters(solicitudes, appliedFilters);
+    const filteredSolicitudesHistory = applyDashboardFilters(solicitudesHistory, appliedFilters);
 
     sendJson(
       res,
       200,
-      buildDashboardPayload(config, dateWindow, filteredConsultas, filteredSolicitudes, dashboardUser, ownerDirectory, filterOptions, appliedFilters)
+      buildDashboardPayload(
+        config,
+        dateWindow,
+        filteredConsultas,
+        filteredSolicitudes,
+        filteredSolicitudesHistory,
+        dashboardUser,
+        ownerDirectory,
+        filterOptions,
+        appliedFilters
+      )
     );
   } catch (error) {
     console.error("Dashboard refresh failed", error);
@@ -830,7 +844,7 @@ function applyDashboardFilters(rows, filters) {
   });
 }
 
-function buildDashboardPayload(config, dateWindow, consultas, solicitudes, user, ownerDirectory, filterOptions, appliedFilters) {
+function buildDashboardPayload(config, dateWindow, consultas, solicitudes, solicitudesHistory, user, ownerDirectory, filterOptions, appliedFilters) {
   const byOwner = buildSeries(consultas, solicitudes, (row) => ({
     key: row.ownerId || row.owner,
     label: row.owner,
@@ -859,6 +873,7 @@ function buildDashboardPayload(config, dateWindow, consultas, solicitudes, user,
   const ownerProgramWithCompliance = byOwnerProgram.map((row) => attachOwnerCompliance(row, ownerDirectory));
   const complianceValue = averageCompliance(ownersWithCompliance);
   const complianceStatus = buildComplianceStatus(complianceValue);
+  const programComparison = buildProgramComparison(solicitudesHistory, dateWindow.currentYear);
 
   return {
     title: config.title,
@@ -913,7 +928,8 @@ function buildDashboardPayload(config, dateWindow, consultas, solicitudes, user,
     tables: {
       byOwner: ownersWithCompliance,
       byProgram,
-      byOwnerProgram: ownerProgramWithCompliance
+      byOwnerProgram: ownerProgramWithCompliance,
+      programComparison
     },
     samples: {
       consultas: consultas.slice(0, 8).map((row) => ({
@@ -1032,6 +1048,7 @@ function buildDateWindow(dateRangeConfig = {}) {
 
   if ((dateRangeConfig.mode || "current_calendar_year") === "current_calendar_year") {
     return {
+      currentYear,
       label: `${dateRangeConfig.label || "Ano calendario actual"} (${currentYear})`,
       startDate: `${currentYear}-01-01`,
       endDate: `${currentYear}-12-31`,
@@ -1041,6 +1058,131 @@ function buildDateWindow(dateRangeConfig = {}) {
   }
 
   throw new Error(`Unsupported date range mode: ${dateRangeConfig.mode}`);
+}
+
+function buildHistoricalDateWindow(currentYear, spanYears) {
+  const startYear = currentYear - spanYears + 1;
+
+  return {
+    currentYear,
+    label: `${startYear}-${currentYear}`,
+    startDate: `${startYear}-01-01`,
+    endDate: `${currentYear}-12-31`,
+    startDateTime: `${startYear}-01-01T00:00:00Z`,
+    endDateTime: `${currentYear}-12-31T23:59:59Z`
+  };
+}
+
+function buildProgramComparison(rows, currentYear) {
+  const years = [
+    currentYear - 3,
+    currentYear - 2,
+    currentYear - 1,
+    currentYear
+  ];
+  const aggregate = new Map();
+
+  for (const row of rows) {
+    const year = extractYear(row.dateValue);
+    if (!year || !years.includes(year)) {
+      continue;
+    }
+
+    const key = row.programId || row.programName;
+    const item = aggregate.get(key) || {
+      key,
+      programName: row.programName,
+      counts: {}
+    };
+    item.counts[year] = (item.counts[year] || 0) + 1;
+    aggregate.set(key, item);
+  }
+
+  const [year1, year2, year3, year4] = years;
+  const rowsFormatted = [...aggregate.values()]
+    .map((item) => {
+      const count1 = item.counts[year1] || 0;
+      const count2 = item.counts[year2] || 0;
+      const count3 = item.counts[year3] || 0;
+      const count4 = item.counts[year4] || 0;
+
+      return {
+        programName: item.programName,
+        [String(year1)]: count1 || "",
+        [String(year2)]: count2 || "",
+        [`${year2}Delta`]: formatProgramDelta(count1, count2, false),
+        [String(year3)]: count3 || "",
+        [`${year3}Delta`]: formatProgramDelta(count2, count3, false),
+        [`solicitudes${year4}`]: count4 || "",
+        [`${year4}Delta`]: formatProgramDelta(count3, count4, true)
+      };
+    })
+    .sort((left, right) => {
+      const rightCurrent = Number(right[`solicitudes${year4}`] || 0);
+      const leftCurrent = Number(left[`solicitudes${year4}`] || 0);
+      if (rightCurrent !== leftCurrent) {
+        return rightCurrent - leftCurrent;
+      }
+
+      const rightPrevious = Number(right[String(year3)] || 0);
+      const leftPrevious = Number(left[String(year3)] || 0);
+      if (rightPrevious !== leftPrevious) {
+        return rightPrevious - leftPrevious;
+      }
+
+      return left.programName.localeCompare(right.programName, "es");
+    });
+
+  return {
+    columns: [
+      "programName",
+      String(year1),
+      String(year2),
+      `${year2}Delta`,
+      String(year3),
+      `${year3}Delta`,
+      `solicitudes${year4}`,
+      `${year4}Delta`
+    ],
+    labels: {
+      programName: "Programa",
+      [String(year1)]: String(year1),
+      [String(year2)]: String(year2),
+      [`${year2}Delta`]: `${year2} vs ${year1}`,
+      [String(year3)]: String(year3),
+      [`${year3}Delta`]: `${year3} vs ${year2}`,
+      [`solicitudes${year4}`]: `Solicitudes ${year4}`,
+      [`${year4}Delta`]: `${year4} vs ${year3}`
+    },
+    numericColumns: [
+      String(year1),
+      String(year2),
+      String(year3),
+      `solicitudes${year4}`
+    ],
+    rows: rowsFormatted
+  };
+}
+
+function extractYear(value) {
+  const match = String(value || "").match(/^(\d{4})-/);
+  return match ? Number(match[1]) : 0;
+}
+
+function formatProgramDelta(previousCount, currentCount, isCurrentYearComparison) {
+  if (!previousCount && !currentCount) {
+    return "—";
+  }
+
+  if (!previousCount && currentCount) {
+    return isCurrentYearComparison ? "Primera edicion" : "No dictado previamente";
+  }
+
+  if (previousCount && !currentCount) {
+    return "-100,00%";
+  }
+
+  return formatPercentValue(((currentCount - previousCount) / previousCount) * 100);
 }
 
 function flattenRecord(record, fields) {

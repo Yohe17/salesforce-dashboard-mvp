@@ -26,7 +26,7 @@ const elements = {
   programChart: document.querySelector("#program-chart"),
   ownerTable: document.querySelector("#owner-table"),
   programTable: document.querySelector("#program-table"),
-  ownerProgramTable: document.querySelector("#owner-program-table"),
+  programComparisonTable: document.querySelector("#program-comparison-table"),
   consultasSample: document.querySelector("#consultas-sample"),
   solicitudesSample: document.querySelector("#solicitudes-sample")
 };
@@ -188,15 +188,12 @@ function renderDashboard() {
     tasa: "Tasa"
   });
   renderTable(
-    elements.ownerProgramTable,
-    ["owner", "programName", "consultas", "solicitudes", "tasa"],
-    state.dashboard.tables.byOwnerProgram,
+    elements.programComparisonTable,
+    state.dashboard.tables.programComparison.columns,
+    state.dashboard.tables.programComparison.rows,
+    state.dashboard.tables.programComparison.labels,
     {
-      owner: "Asesor",
-      programName: "Programa",
-      consultas: "Consultas",
-      solicitudes: "Solicitudes",
-      tasa: "Tasa"
+      numericColumns: state.dashboard.tables.programComparison.numericColumns
     }
   );
   renderTable(elements.consultasSample, ["Fecha", "Owner", "Programa", "Origen"], state.dashboard.samples.consultas);
@@ -210,7 +207,7 @@ function clearDashboardContainers() {
     elements.programChart,
     elements.ownerTable,
     elements.programTable,
-    elements.ownerProgramTable,
+    elements.programComparisonTable,
     elements.consultasSample,
     elements.solicitudesSample
   ].forEach((element) => {
@@ -317,7 +314,7 @@ function renderBarList(container, rows) {
   });
 }
 
-function renderTable(container, columns, rows, labels = {}) {
+function renderTable(container, columns, rows, labels = {}, options = {}) {
   container.innerHTML = "";
 
   if (!rows.length) {
@@ -345,7 +342,7 @@ function renderTable(container, columns, rows, labels = {}) {
     const tr = document.createElement("tr");
     columns.forEach((column) => {
       const td = document.createElement("td");
-      td.textContent = formatValueForColumn(column, row[column]);
+      td.textContent = formatValueForColumn(column, row[column], options);
       tr.append(td);
     });
     tbody.append(tr);
@@ -355,12 +352,12 @@ function renderTable(container, columns, rows, labels = {}) {
   container.append(table);
 }
 
-function formatValueForColumn(column, value) {
+function formatValueForColumn(column, value, options = {}) {
   if (column === "tasa") {
     return formatPercent(value);
   }
 
-  if (column === "consultas" || column === "solicitudes") {
+  if (column === "consultas" || column === "solicitudes" || options.numericColumns?.includes(column)) {
     return formatNumber(value);
   }
 
@@ -368,7 +365,11 @@ function formatValueForColumn(column, value) {
     return formatTimestamp(value);
   }
 
-  return value || "—";
+  if (value === null || value === undefined || value === "") {
+    return "—";
+  }
+
+  return value;
 }
 
 function renderMessage(message) {
