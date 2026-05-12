@@ -27,6 +27,10 @@ const env = {
 
 const sessions = new Map();
 const oauthStates = new Map();
+const integrationAuthState = {
+  auth: null,
+  pending: null
+};
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
@@ -52,7 +56,7 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         time: new Date().toISOString(),
         authConfigReady: isUserAuthConfigReady(),
-        dataAccessMode: "salesforce_user",
+        dataAccessMode: "integration_user",
         configLoaded: fs.existsSync(env.dashboardConfigPath)
       });
     }
@@ -228,14 +232,14 @@ async function handleDashboardRefresh(req, res) {
     const dateWindow = buildDateWindow(config.dateRange);
     const historyWindow = buildHistoricalDateWindow(dateWindow.currentYear, 4);
     const dashboardUser = await enrichDashboardUser(session);
-    const consultasRecords = await fetchAllRecords(session, buildQuery(config.consultas, dateWindow));
-    const solicitudesRecords = await fetchAllRecords(session, buildQuery(config.solicitudes, dateWindow));
-    const solicitudesHistoryRecords = await fetchAllRecords(session, buildQuery(config.solicitudes, historyWindow));
+    const consultasRecords = await fetchAllRecords(buildQuery(config.consultas, dateWindow));
+    const solicitudesRecords = await fetchAllRecords(buildQuery(config.solicitudes, dateWindow));
+    const solicitudesHistoryRecords = await fetchAllRecords(buildQuery(config.solicitudes, historyWindow));
 
     const consultas = consultasRecords.map((record) => mapRecord(record, config.consultas));
     const solicitudes = solicitudesRecords.map((record) => mapRecord(record, config.solicitudes));
     const solicitudesHistory = solicitudesHistoryRecords.map((record) => mapRecord(record, config.solicitudes));
-    const ownerDirectory = await loadOwnerDirectory(session, consultas, solicitudes);
+    const ownerDirectory = await loadOwnerDirectory(consultas, solicitudes);
 
     sendJson(
       res,
@@ -278,7 +282,7 @@ function handleAuthLogin(res) {
   authorizeUrl.searchParams.set("response_type", "code");
   authorizeUrl.searchParams.set("client_id", env.salesforceClientId);
   authorizeUrl.searchParams.set("redirect_uri", getRedirectUri());
-  authorizeUrl.searchParams.set("scope", "api refresh_token");
+  authorizeUrl.searchParams.set("scope", "api");
   authorizeUrl.searchParams.set("state", state);
   authorizeUrl.searchParams.set("code_challenge", challenge);
   authorizeUrl.searchParams.set("code_challenge_method", "S256");
@@ -321,9 +325,8 @@ async function handleAuthCallback(requestUrl, res) {
         displayName: identity.display_name || identity.name || identity.username,
         email: identity.email || "",
         organizationId: identity.organization_id,
-        dataAccessMode: "salesforce_user"
-      },
-      salesforceAuth: buildSalesforceAuth(tokenPayload)
+        dataAccessMode: "integration_user"
+      }
     });
 
     setSessionCookie(res, session.id);
@@ -497,9 +500,9 @@ function escapeSoqlString(value) {
   return String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
-async function fetchAllRecords(session, soql) {
+async function fetchAllRecords(soql) {
   const records = [];
-  let auth = await getSessionSalesforceAuth(session);
+  let auth = await getIntegrationSalesforceAuth();
   let nextUrl = `${auth.instanceUrl}/services/data/v${env.salesforceApiVersion}/query?q=${encodeURIComponent(soql)}`;
   let attempts = 0;
 
@@ -511,7 +514,7 @@ async function fetchAllRecords(session, soql) {
     });
 
     if (response.status === 401 && attempts === 0) {
-      auth = await getSessionSalesforceAuth(session, true);
+      auth = await getIntegrationSalesforceAuth(true);
       attempts += 1;
       continue;
     }
@@ -547,40 +550,37 @@ function inferTokenLifetimeMs(tokenPayload) {
   return 90 * 60 * 1000;
 }
 
-async function getSessionSalesforceAuth(session, forceRefresh = false) {
-  if (!session.salesforceAuth?.accessToken) {
-    throw new Error("La sesion de Salesforce no esta disponible. Vuelve a iniciar sesion.");
-  }
-
+async function getIntegrationSalesforceAuth(forceRefresh = false) {
   const shouldRefresh =
     forceRefresh ||
-    !session.salesforceAuth.expiresAt ||
-    session.salesforceAuth.expiresAt <= Date.now() + 15 * 1000;
+    !integrationAuthState.auth?.accessToken ||
+    !integrationAuthState.auth.expiresAt ||
+    integrationAuthState.auth.expiresAt <= Date.now() + 15 * 1000;
 
   if (!shouldRefresh) {
-    return session.salesforceAuth;
+    return integrationAuthState.auth;
   }
 
-  if (!session.salesforceAuth.refreshToken) {
-    throw new Error("La sesion de Salesforce expiro. Vuelve a iniciar sesion.");
+  if (!integrationAuthState.pending || forceRefresh) {
+    integrationAuthState.pending = requestIntegrationToken()
+      .then((tokenPayload) => {
+        integrationAuthState.auth = buildSalesforceAuth(tokenPayload, env.salesforceAuthBaseUrl);
+        return integrationAuthState.auth;
+      })
+      .finally(() => {
+        integrationAuthState.pending = null;
+      });
   }
 
-  const refreshed = await refreshUserToken(session.salesforceAuth.refreshToken);
-  session.salesforceAuth = {
-    ...buildSalesforceAuth(refreshed, session.salesforceAuth.instanceUrl),
-    refreshToken: refreshed.refresh_token || session.salesforceAuth.refreshToken
-  };
-  sessions.set(session.id, session);
-  return session.salesforceAuth;
+  return integrationAuthState.pending;
 }
 
-async function refreshUserToken(refreshToken) {
+async function requestIntegrationToken() {
   const tokenUrl = `${env.salesforceAuthBaseUrl}/services/oauth2/token`;
   const body = new URLSearchParams({
-    grant_type: "refresh_token",
+    grant_type: "client_credentials",
     client_id: env.salesforceClientId,
-    client_secret: env.salesforceClientSecret,
-    refresh_token: refreshToken
+    client_secret: env.salesforceClientSecret
   });
 
   return fetchJson(tokenUrl, {
@@ -655,7 +655,7 @@ async function enrichDashboardUser(session) {
   const dashboardUser = { ...session.user };
 
   try {
-    const userRecord = await fetchCurrentUserRecord(session, session.user.id);
+    const userRecord = await fetchCurrentUserRecord(session.user.id);
     dashboardUser.displayName = userRecord.Name || dashboardUser.displayName;
     dashboardUser.username = userRecord.Username || dashboardUser.username;
     dashboardUser.email = userRecord.Email || dashboardUser.email;
@@ -669,9 +669,8 @@ async function enrichDashboardUser(session) {
   return dashboardUser;
 }
 
-async function fetchCurrentUserRecord(session, userId) {
+async function fetchCurrentUserRecord(userId) {
   const records = await fetchAllRecords(
-    session,
     `SELECT Id, Name, Username, Email, Objetivo__c FROM User WHERE Id = '${escapeSoqlString(userId)}' LIMIT 1`
   );
 
@@ -720,7 +719,7 @@ function buildComplianceStatus(value) {
   };
 }
 
-async function loadOwnerDirectory(session, consultas, solicitudes) {
+async function loadOwnerDirectory(consultas, solicitudes) {
   const ownerIds = uniqueValues(
     [...consultas, ...solicitudes]
       .map((row) => row.ownerId)
@@ -732,7 +731,7 @@ async function loadOwnerDirectory(session, consultas, solicitudes) {
   }
 
   try {
-    const records = await fetchUsersByIds(session, ownerIds);
+    const records = await fetchUsersByIds(ownerIds);
     return new Map(
       records.map((record) => {
         const objetivoPercent = normalizePercentValue(record.Objetivo__c);
@@ -754,7 +753,7 @@ async function loadOwnerDirectory(session, consultas, solicitudes) {
   }
 }
 
-async function fetchUsersByIds(session, ownerIds) {
+async function fetchUsersByIds(ownerIds) {
   const chunkSize = 100;
   const records = [];
 
@@ -762,7 +761,7 @@ async function fetchUsersByIds(session, ownerIds) {
     const chunk = ownerIds.slice(index, index + chunkSize);
     const values = chunk.map((id) => `'${escapeSoqlString(id)}'`).join(", ");
     const soql = `SELECT Id, Name, Username, Email, Objetivo__c FROM User WHERE Id IN (${values})`;
-    const response = await fetchAllRecords(session, soql);
+    const response = await fetchAllRecords(soql);
     records.push(...response);
   }
 
