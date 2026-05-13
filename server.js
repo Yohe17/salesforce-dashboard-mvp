@@ -650,7 +650,7 @@ async function fetchJson(url, options = {}) {
 
 function mapRecord(record, objectConfig) {
   const owner = getNestedValue(record, objectConfig.ownerField) || "Sin owner";
-  const ownerId = getNestedValue(record, "OwnerId") || "";
+  const ownerId = getNestedValue(record, objectConfig.ownerIdField || "OwnerId") || "";
   const programId = getNestedValue(record, objectConfig.programIdField) || "";
   const programName = getNestedValue(record, objectConfig.programNameField) || "Sin programa";
   const dateValue = getNestedValue(record, objectConfig.dateField) || "";

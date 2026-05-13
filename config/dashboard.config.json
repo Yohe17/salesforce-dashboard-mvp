@@ -17,14 +17,16 @@
       "endDateTime": "2026-12-31T23:59:59Z",
       "label": "1 Jan 2025 - 31 Dec 2026"
     },
-    "ownerField": "Owner.Name",
+    "ownerField": "Programa__r.Asesor_responsable__r.Name",
+    "ownerIdField": "Programa__r.Asesor_responsable__c",
     "programIdField": "Programa__c",
     "programNameField": "Programa__r.Name",
     "fields": [
       "Id",
       "OwnerId",
       "CreatedDate",
-      "Owner.Name",
+      "Programa__r.Asesor_responsable__c",
+      "Programa__r.Asesor_responsable__r.Name",
       "Programa__c",
       "Programa__r.Name",
       "Programa__r.ObjetivoSolicitudes__c",
@@ -39,12 +41,16 @@
         "value": "UCEMAX"
       },
       {
-        "field": "Origen_de_la_consulta__c",
+        "field": "Programa__r.Asesor_responsable__r.Name",
         "operator": "in",
         "values": [
-          "Web",
-          "Advertisement",
-          "Anuncio"
+          "Azul Schmidt",
+          "Francisco Aliano",
+          "Pedro Graces",
+          "Santiago Ivaldi Sesto",
+          "Matias Manconi",
+          "Bautista Rebollini",
+          "Segundo Vilamajo"
         ]
       },
       {
@@ -59,14 +65,16 @@
     "apiName": "hed__Application__c",
     "dateField": "FechaPlazo__c",
     "dateKind": "date",
-    "ownerField": "Owner.Name",
+    "ownerField": "hed__Applying_To__r.Asesor_responsable__r.Name",
+    "ownerIdField": "hed__Applying_To__r.Asesor_responsable__c",
     "programIdField": "hed__Applying_To__c",
     "programNameField": "hed__Applying_To__r.Name",
     "fields": [
       "Id",
       "OwnerId",
       "FechaPlazo__c",
-      "Owner.Name",
+      "hed__Applying_To__r.Asesor_responsable__c",
+      "hed__Applying_To__r.Asesor_responsable__r.Name",
       "hed__Applying_To__c",
       "hed__Applying_To__r.Name",
       "hed__Applying_To__r.ObjetivoSolicitudes__c",
@@ -88,6 +96,19 @@
           "Admision",
           "Admit",
           "Baja"
+        ]
+      },
+      {
+        "field": "hed__Applying_To__r.Asesor_responsable__r.Name",
+        "operator": "in",
+        "values": [
+          "Azul Schmidt",
+          "Francisco Aliano",
+          "Pedro Graces",
+          "Santiago Ivaldi Sesto",
+          "Matias Manconi",
+          "Bautista Rebollini",
+          "Segundo Vilamajo"
         ]
       },
       {
