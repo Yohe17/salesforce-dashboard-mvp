@@ -55,6 +55,7 @@
       "Owner.Name",
       "hed__Applying_To__c",
       "hed__Applying_To__r.Name",
+      "hed__Application_Status__c",
       "Tipo_de_Programa__c"
     ],
     "filters": [
@@ -62,6 +63,16 @@
         "field": "Tipo_de_Programa__c",
         "operator": "eq",
         "value": "Programas Ejecutivos"
+      },
+      {
+        "field": "hed__Application_Status__c",
+        "operator": "in",
+        "values": [
+          "Admitido",
+          "Admision",
+          "Admit",
+          "Baja"
+        ]
       }
     ]
   }

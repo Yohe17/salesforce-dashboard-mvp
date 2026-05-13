@@ -167,19 +167,25 @@ function renderDashboard() {
   renderKpis();
   renderBarList(elements.ownerChart, state.dashboard.charts.byOwner);
   renderBarList(elements.programChart, state.dashboard.charts.byProgram);
-  renderTable(elements.ownerTable, ["label", "semaforo", "consultas", "solicitudes", "tasa"], state.dashboard.tables.byOwner, {
+  renderTable(elements.ownerTable, ["label", "consultas", "solicitudes", "tasa"], state.dashboard.tables.byOwner, {
     label: "Asesor",
-    semaforo: "Semaforo",
     consultas: "Consultas",
     solicitudes: "Solicitudes",
     tasa: "Tasa"
   });
-  renderTable(elements.programTable, ["label", "consultas", "solicitudes", "tasa"], state.dashboard.tables.byProgram, {
-    label: "Programa",
-    consultas: "Consultas",
-    solicitudes: "Solicitudes",
-    tasa: "Tasa"
-  });
+  renderTable(
+    elements.programTable,
+    ["label", "consultas", "solicitudes", "tasa", "objetivoSolicitudes", "tasaCumplimiento"],
+    state.dashboard.tables.byProgram,
+    {
+      label: "Programa",
+      consultas: "Consultas",
+      solicitudes: "Solicitudes",
+      tasa: "Tasa",
+      objetivoSolicitudes: "Objetivo de cumplimiento",
+      tasaCumplimiento: "Tasa de cumplimiento"
+    }
+  );
   renderTable(
     elements.programComparisonTable,
     state.dashboard.tables.programComparison.columns,
@@ -201,6 +207,7 @@ function recomputeDashboard() {
   }
 
   const ownerDirectory = createOwnerDirectoryMap(state.source.ownerDirectory || []);
+  const programDirectory = createProgramDirectoryMap(state.source.programDirectory || []);
   const filterOptions = state.source.filterOptions || buildFilterOptionsClient(state.source.consultas, state.source.solicitudes, ownerDirectory);
   const appliedFilters = resolveDashboardFiltersClient(state.filters, filterOptions);
   const filteredConsultas = applyDashboardFiltersClient(state.source.consultas, appliedFilters);
@@ -215,6 +222,7 @@ function recomputeDashboard() {
     filteredSolicitudesHistory,
     state.source.user,
     ownerDirectory,
+    programDirectory,
     filterOptions,
     appliedFilters
   );
@@ -292,6 +300,15 @@ function createOwnerDirectoryMap(entries) {
   );
 }
 
+function createProgramDirectoryMap(entries) {
+  return new Map(
+    entries.map((entry) => [
+      entry.id,
+      entry
+    ])
+  );
+}
+
 function buildFilterOptionsClient(consultas, solicitudes, ownerDirectory) {
   const owners = new Map();
   const programs = new Map();
@@ -344,7 +361,7 @@ function applyDashboardFiltersClient(rows, filters) {
   });
 }
 
-function buildDashboardView(dateWindow, consultas, solicitudes, solicitudesHistory, user, ownerDirectory, filterOptions, activeFilters) {
+function buildDashboardView(dateWindow, consultas, solicitudes, solicitudesHistory, user, ownerDirectory, programDirectory, filterOptions, activeFilters) {
   const byOwner = buildSeriesClient(consultas, solicitudes, (row) => ({
     key: row.ownerId || row.owner,
     label: row.owner,
@@ -361,18 +378,13 @@ function buildDashboardView(dateWindow, consultas, solicitudes, solicitudesHisto
   const consultasCount = consultas.length;
   const solicitudesCount = solicitudes.length;
   const conversionRate = computeRateClient(solicitudesCount, consultasCount);
-  const ownersWithCompliance = byOwner.map((row) => attachOwnerComplianceClient(row, ownerDirectory));
-  const complianceValue = averageComplianceClient(ownersWithCompliance);
-  const complianceStatus = buildComplianceStatusClient(complianceValue);
+  const byProgramWithTargets = byProgram.map((row) => attachProgramTargetClient(row, programDirectory));
   const programComparison = buildProgramComparisonClient(solicitudesHistory, dateWindow.currentYear);
 
   return {
     generatedAt: state.source.generatedAt,
     dateWindow,
-    user: {
-      ...user,
-      objetivoPercent: complianceValue
-    },
+    user,
     activeFilters,
     filterOptions,
     kpis: [
@@ -393,13 +405,6 @@ function buildDashboardView(dateWindow, consultas, solicitudes, solicitudesHisto
         tone: "accent"
       },
       {
-        label: "Semaforo de cumplimiento",
-        value: complianceValue,
-        type: "semaphore",
-        icon: complianceStatus.icon,
-        tone: complianceStatus.tone
-      },
-      {
         label: "Owners cubiertos",
         value: byOwner.length,
         tone: "default"
@@ -411,12 +416,12 @@ function buildDashboardView(dateWindow, consultas, solicitudes, solicitudesHisto
       }
     ],
     charts: {
-      byOwner: ownersWithCompliance.slice(0, 8),
-      byProgram: byProgram.slice(0, 8)
+      byOwner: byOwner.slice(0, 8),
+      byProgram: byProgramWithTargets.slice(0, 8)
     },
     tables: {
-      byOwner: ownersWithCompliance,
-      byProgram,
+      byOwner,
+      byProgram: byProgramWithTargets,
       programComparison
     },
     samples: {
@@ -482,73 +487,30 @@ function createSeriesEntryClient(info) {
   };
 }
 
-function attachOwnerComplianceClient(row, ownerDirectory) {
-  const ownerMeta = ownerDirectory.get(row.ownerId || "");
-  const objetivoPercent = ownerMeta?.objetivoPercent ?? null;
-  const semaphore = ownerMeta?.semaphore || buildComplianceStatusClient(objetivoPercent);
-
+function attachProgramTargetClient(row, programDirectory) {
+  const programMeta = programDirectory.get(row.programId || "");
+  const objetivoSolicitudes = programMeta?.objetivoSolicitudes ?? null;
   return {
     ...row,
-    objetivoPercent,
-    semaforo: buildSemaphoreLabelClient(semaphore, objetivoPercent)
+    objetivoSolicitudes,
+    tasaCumplimiento: computeGoalRateClient(row.solicitudes, objetivoSolicitudes)
   };
 }
 
-function buildSemaphoreLabelClient(semaphore, objetivoPercent) {
-  if (objetivoPercent === null) {
-    return semaphore.icon || "—";
+function computeGoalRateClient(actualValue, goalValue) {
+  if (!goalValue) {
+    return 0;
   }
 
-  return `${semaphore.icon} ${formatPercent(objetivoPercent)}`;
-}
-
-function averageComplianceClient(rows) {
-  const values = rows
-    .map((row) => row.objetivoPercent)
-    .filter((value) => value !== null && value !== undefined);
-
-  if (!values.length) {
-    return null;
-  }
-
-  const total = values.reduce((sum, value) => sum + value, 0);
-  return Number((total / values.length).toFixed(2));
-}
-
-function buildComplianceStatusClient(value) {
-  if (value === null) {
-    return {
-      icon: "—",
-      tone: "neutral"
-    };
-  }
-
-  if (value < 30) {
-    return {
-      icon: "🔴",
-      tone: "danger"
-    };
-  }
-
-  if (value > 70) {
-    return {
-      icon: "🟢",
-      tone: "success"
-    };
-  }
-
-  return {
-    icon: "🟡",
-    tone: "warning"
-  };
+  return Number(((actualValue / goalValue) * 100).toFixed(2));
 }
 
 function buildProgramComparisonClient(rows, currentYear) {
-  const years = [currentYear - 3, currentYear - 2, currentYear - 1, currentYear];
+  const years = [currentYear - 2, currentYear - 1, currentYear];
   const aggregate = new Map();
 
   rows.forEach((row) => {
-    const year = extractYearClient(row.dateValue);
+    const year = extractProgramComparisonYearClient(row.dateValue);
     if (!year || !years.includes(year)) {
       return;
     }
@@ -563,34 +525,31 @@ function buildProgramComparisonClient(rows, currentYear) {
     aggregate.set(key, item);
   });
 
-  const [year1, year2, year3, year4] = years;
+  const [year1, year2, year3] = years;
   const rowsFormatted = [...aggregate.values()]
     .map((item) => {
       const count1 = item.counts[year1] || 0;
       const count2 = item.counts[year2] || 0;
       const count3 = item.counts[year3] || 0;
-      const count4 = item.counts[year4] || 0;
 
       return {
         programName: item.programName,
         [String(year1)]: count1 || "",
         [String(year2)]: count2 || "",
-        [`${year2}Delta`]: formatProgramDeltaClient(count1, count2, false),
         [String(year3)]: count3 || "",
-        [`${year3}Delta`]: formatProgramDeltaClient(count2, count3, false),
-        [`solicitudes${year4}`]: count4 || "",
-        [`${year4}Delta`]: formatProgramDeltaClient(count3, count4, true)
+        [`${year2}Delta`]: formatProgramDeltaClient(count1, count2, false),
+        [`${year3}Delta`]: formatProgramDeltaClient(count2, count3, true)
       };
     })
     .sort((left, right) => {
-      const rightCurrent = Number(right[`solicitudes${year4}`] || 0);
-      const leftCurrent = Number(left[`solicitudes${year4}`] || 0);
+      const rightCurrent = Number(right[String(year3)] || 0);
+      const leftCurrent = Number(left[String(year3)] || 0);
       if (rightCurrent !== leftCurrent) {
         return rightCurrent - leftCurrent;
       }
 
-      const rightPrevious = Number(right[String(year3)] || 0);
-      const leftPrevious = Number(left[String(year3)] || 0);
+      const rightPrevious = Number(right[String(year2)] || 0);
+      const leftPrevious = Number(left[String(year2)] || 0);
       if (rightPrevious !== leftPrevious) {
         return rightPrevious - leftPrevious;
       }
@@ -603,35 +562,36 @@ function buildProgramComparisonClient(rows, currentYear) {
       "programName",
       String(year1),
       String(year2),
-      `${year2}Delta`,
       String(year3),
-      `${year3}Delta`,
-      `solicitudes${year4}`,
-      `${year4}Delta`
+      `${year2}Delta`,
+      `${year3}Delta`
     ],
     labels: {
       programName: "Programa",
       [String(year1)]: String(year1),
       [String(year2)]: String(year2),
-      [`${year2}Delta`]: `${year2} vs ${year1}`,
       [String(year3)]: String(year3),
-      [`${year3}Delta`]: `${year3} vs ${year2}`,
-      [`solicitudes${year4}`]: `Solicitudes ${year4}`,
-      [`${year4}Delta`]: `${year4} vs ${year3}`
+      [`${year2}Delta`]: `${year1} vs ${year2}`,
+      [`${year3}Delta`]: `${year2} vs ${year3}`
     },
     numericColumns: [
       String(year1),
       String(year2),
-      String(year3),
-      `solicitudes${year4}`
+      String(year3)
     ],
     rows: rowsFormatted
   };
 }
 
-function extractYearClient(value) {
-  const match = String(value || "").match(/^(\d{4})-/);
-  return match ? Number(match[1]) : 0;
+function extractProgramComparisonYearClient(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-/);
+  if (!match) {
+    return 0;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  return month >= 10 ? year + 1 : year;
 }
 
 function formatProgramDeltaClient(previousCount, currentCount, isCurrentYearComparison) {
@@ -751,11 +711,16 @@ function renderTable(container, columns, rows, labels = {}, options = {}) {
 }
 
 function formatValueForColumn(column, value, options = {}) {
-  if (column === "tasa") {
+  if (column === "tasa" || column === "tasaCumplimiento") {
     return formatPercent(value);
   }
 
-  if (column === "consultas" || column === "solicitudes" || options.numericColumns?.includes(column)) {
+  if (
+    column === "consultas" ||
+    column === "solicitudes" ||
+    column === "objetivoSolicitudes" ||
+    options.numericColumns?.includes(column)
+  ) {
     return formatNumber(value);
   }
 

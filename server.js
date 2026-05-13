@@ -230,16 +230,17 @@ async function handleDashboardRefresh(req, res) {
   try {
     const config = await readDashboardConfig();
     const dateWindow = buildDateWindow(config.dateRange);
-    const historyWindow = buildHistoricalDateWindow(dateWindow.currentYear, 4);
+    const programComparisonWindow = buildProgramComparisonDateWindow(dateWindow.currentYear);
     const dashboardUser = await enrichDashboardUser(session);
     const consultasRecords = await fetchAllRecords(buildQuery(config.consultas, dateWindow));
     const solicitudesRecords = await fetchAllRecords(buildQuery(config.solicitudes, dateWindow));
-    const solicitudesHistoryRecords = await fetchAllRecords(buildQuery(config.solicitudes, historyWindow));
+    const solicitudesHistoryRecords = await fetchAllRecords(buildQuery(config.solicitudes, programComparisonWindow));
 
     const consultas = consultasRecords.map((record) => mapRecord(record, config.consultas));
     const solicitudes = solicitudesRecords.map((record) => mapRecord(record, config.solicitudes));
     const solicitudesHistory = solicitudesHistoryRecords.map((record) => mapRecord(record, config.solicitudes));
     const ownerDirectory = await loadOwnerDirectory(consultas, solicitudes);
+    const programDirectory = await loadProgramDirectory(consultas, solicitudes);
 
     sendJson(
       res,
@@ -251,7 +252,8 @@ async function handleDashboardRefresh(req, res) {
         solicitudes,
         solicitudesHistory,
         dashboardUser,
-        ownerDirectory
+        ownerDirectory,
+        programDirectory
       )
     );
   } catch (error) {
@@ -734,16 +736,13 @@ async function loadOwnerDirectory(consultas, solicitudes) {
     const records = await fetchUsersByIds(ownerIds);
     return new Map(
       records.map((record) => {
-        const objetivoPercent = normalizePercentValue(record.Objetivo__c);
         return [
           record.Id,
           {
             id: record.Id,
             name: record.Name || "Sin owner",
             username: record.Username || "",
-            email: record.Email || "",
-            objetivoPercent,
-            semaphore: buildComplianceStatus(objetivoPercent)
+            email: record.Email || ""
           }
         ];
       })
@@ -760,12 +759,68 @@ async function fetchUsersByIds(ownerIds) {
   for (let index = 0; index < ownerIds.length; index += chunkSize) {
     const chunk = ownerIds.slice(index, index + chunkSize);
     const values = chunk.map((id) => `'${escapeSoqlString(id)}'`).join(", ");
-    const soql = `SELECT Id, Name, Username, Email, Objetivo__c FROM User WHERE Id IN (${values})`;
+    const soql = `SELECT Id, Name, Username, Email FROM User WHERE Id IN (${values})`;
     const response = await fetchAllRecords(soql);
     records.push(...response);
   }
 
   return records;
+}
+
+async function loadProgramDirectory(consultas, solicitudes) {
+  const programIds = uniqueValues(
+    [...consultas, ...solicitudes]
+      .map((row) => row.programId)
+      .filter(Boolean)
+  );
+
+  if (!programIds.length) {
+    return new Map();
+  }
+
+  try {
+    const records = await fetchAccountsByIds(programIds);
+    return new Map(
+      records.map((record) => [
+        record.Id,
+        {
+          id: record.Id,
+          name: record.Name || "Sin programa",
+          objetivoSolicitudes: normalizeGoalValue(record.ObjetivoSolicitudes__c)
+        }
+      ])
+    );
+  } catch (error) {
+    return new Map();
+  }
+}
+
+async function fetchAccountsByIds(programIds) {
+  const chunkSize = 100;
+  const records = [];
+
+  for (let index = 0; index < programIds.length; index += chunkSize) {
+    const chunk = programIds.slice(index, index + chunkSize);
+    const values = chunk.map((id) => `'${escapeSoqlString(id)}'`).join(", ");
+    const soql = `SELECT Id, Name, ObjetivoSolicitudes__c FROM Account WHERE Id IN (${values})`;
+    const response = await fetchAllRecords(soql);
+    records.push(...response);
+  }
+
+  return records;
+}
+
+function normalizeGoalValue(value) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return null;
+  }
+
+  return Number(numeric.toFixed(2));
 }
 
 function buildFilterOptions(consultas, solicitudes, ownerDirectory) {
@@ -800,7 +855,7 @@ function sortFilterOptions(options) {
   return options.sort((left, right) => left.label.localeCompare(right.label, "es"));
 }
 
-function buildDashboardPayload(config, dateWindow, consultas, solicitudes, solicitudesHistory, user, ownerDirectory) {
+function buildDashboardPayload(config, dateWindow, consultas, solicitudes, solicitudesHistory, user, ownerDirectory, programDirectory) {
   const byOwner = buildSeries(consultas, solicitudes, (row) => ({
     key: row.ownerId || row.owner,
     label: row.owner,
@@ -825,10 +880,7 @@ function buildDashboardPayload(config, dateWindow, consultas, solicitudes, solic
   const consultasCount = consultas.length;
   const solicitudesCount = solicitudes.length;
   const conversionRate = computeRate(solicitudesCount, consultasCount);
-  const ownersWithCompliance = byOwner.map((row) => attachOwnerCompliance(row, ownerDirectory));
-  const ownerProgramWithCompliance = byOwnerProgram.map((row) => attachOwnerCompliance(row, ownerDirectory));
-  const complianceValue = averageCompliance(ownersWithCompliance);
-  const complianceStatus = buildComplianceStatus(complianceValue);
+  const byProgramWithTargets = byProgram.map((row) => attachProgramTarget(row, programDirectory));
   const programComparison = buildProgramComparison(solicitudesHistory, dateWindow.currentYear);
   const filterOptions = buildFilterOptions(consultas, solicitudes, ownerDirectory);
   const activeFilters = {
@@ -841,10 +893,7 @@ function buildDashboardPayload(config, dateWindow, consultas, solicitudes, solic
     subtitle: config.subtitle,
     generatedAt: new Date().toISOString(),
     dateWindow,
-    user: {
-      ...user,
-      objetivoPercent: complianceValue
-    },
+    user,
     activeFilters,
     filterOptions,
     kpis: [
@@ -865,13 +914,6 @@ function buildDashboardPayload(config, dateWindow, consultas, solicitudes, solic
         tone: "accent"
       },
       {
-        label: "Semaforo de cumplimiento",
-        value: complianceValue,
-        type: "semaphore",
-        icon: complianceStatus.icon,
-        tone: complianceStatus.tone
-      },
-      {
         label: "Owners cubiertos",
         value: byOwner.length,
         tone: "default"
@@ -883,26 +925,24 @@ function buildDashboardPayload(config, dateWindow, consultas, solicitudes, solic
       }
     ],
     charts: {
-      byOwner: ownersWithCompliance.slice(0, 8),
-      byProgram: byProgram.slice(0, 8)
+      byOwner: byOwner.slice(0, 8),
+      byProgram: byProgramWithTargets.slice(0, 8)
     },
     tables: {
-      byOwner: ownersWithCompliance,
-      byProgram,
-      byOwnerProgram: ownerProgramWithCompliance,
+      byOwner,
+      byProgram: byProgramWithTargets,
+      byOwnerProgram: byOwnerProgram,
       programComparison
     },
     source: {
       generatedAt: new Date().toISOString(),
       dateWindow,
-      user: {
-        ...user,
-        objetivoPercent: complianceValue
-      },
+      user,
       consultas,
       solicitudes,
       solicitudesHistory,
       ownerDirectory: [...ownerDirectory.values()],
+      programDirectory: [...programDirectory.values()],
       filterOptions
     },
     samples: {
@@ -968,37 +1008,22 @@ function createSeriesEntry(info) {
   };
 }
 
-function attachOwnerCompliance(row, ownerDirectory) {
-  const ownerMeta = ownerDirectory.get(row.ownerId || "");
-  const objetivoPercent = ownerMeta?.objetivoPercent ?? null;
-  const semaphore = ownerMeta?.semaphore || buildComplianceStatus(objetivoPercent);
-
+function attachProgramTarget(row, programDirectory) {
+  const programMeta = programDirectory.get(row.programId || "");
+  const objetivoSolicitudes = programMeta?.objetivoSolicitudes ?? null;
   return {
     ...row,
-    objetivoPercent,
-    semaforo: buildSemaphoreLabel(semaphore, objetivoPercent)
+    objetivoSolicitudes,
+    tasaCumplimiento: computeGoalRate(row.solicitudes, objetivoSolicitudes)
   };
 }
 
-function buildSemaphoreLabel(semaphore, objetivoPercent) {
-  if (objetivoPercent === null) {
-    return semaphore.icon || "—";
+function computeGoalRate(actualValue, goalValue) {
+  if (!goalValue) {
+    return 0;
   }
 
-  return `${semaphore.icon} ${formatPercentValue(objetivoPercent)}`;
-}
-
-function averageCompliance(rows) {
-  const values = rows
-    .map((row) => row.objetivoPercent)
-    .filter((value) => value !== null && value !== undefined);
-
-  if (!values.length) {
-    return null;
-  }
-
-  const total = values.reduce((sum, value) => sum + value, 0);
-  return Number((total / values.length).toFixed(2));
+  return Number(((actualValue / goalValue) * 100).toFixed(2));
 }
 
 function formatPercentValue(value) {
@@ -1047,17 +1072,23 @@ function buildHistoricalDateWindow(currentYear, spanYears) {
   };
 }
 
+function buildProgramComparisonDateWindow(currentYear) {
+  return {
+    currentYear,
+    label: `${currentYear - 2}-${currentYear}`,
+    startDate: `${currentYear - 3}-10-01`,
+    endDate: `${currentYear}-09-30`,
+    startDateTime: `${currentYear - 3}-10-01T00:00:00Z`,
+    endDateTime: `${currentYear}-09-30T23:59:59Z`
+  };
+}
+
 function buildProgramComparison(rows, currentYear) {
-  const years = [
-    currentYear - 3,
-    currentYear - 2,
-    currentYear - 1,
-    currentYear
-  ];
+  const years = [currentYear - 2, currentYear - 1, currentYear];
   const aggregate = new Map();
 
   for (const row of rows) {
-    const year = extractYear(row.dateValue);
+    const year = extractProgramComparisonYear(row.dateValue);
     if (!year || !years.includes(year)) {
       continue;
     }
@@ -1072,34 +1103,31 @@ function buildProgramComparison(rows, currentYear) {
     aggregate.set(key, item);
   }
 
-  const [year1, year2, year3, year4] = years;
+  const [year1, year2, year3] = years;
   const rowsFormatted = [...aggregate.values()]
     .map((item) => {
       const count1 = item.counts[year1] || 0;
       const count2 = item.counts[year2] || 0;
       const count3 = item.counts[year3] || 0;
-      const count4 = item.counts[year4] || 0;
 
       return {
         programName: item.programName,
         [String(year1)]: count1 || "",
         [String(year2)]: count2 || "",
-        [`${year2}Delta`]: formatProgramDelta(count1, count2, false),
         [String(year3)]: count3 || "",
-        [`${year3}Delta`]: formatProgramDelta(count2, count3, false),
-        [`solicitudes${year4}`]: count4 || "",
-        [`${year4}Delta`]: formatProgramDelta(count3, count4, true)
+        [`${year2}Delta`]: formatProgramDelta(count1, count2, false),
+        [`${year3}Delta`]: formatProgramDelta(count2, count3, true)
       };
     })
     .sort((left, right) => {
-      const rightCurrent = Number(right[`solicitudes${year4}`] || 0);
-      const leftCurrent = Number(left[`solicitudes${year4}`] || 0);
+      const rightCurrent = Number(right[String(year3)] || 0);
+      const leftCurrent = Number(left[String(year3)] || 0);
       if (rightCurrent !== leftCurrent) {
         return rightCurrent - leftCurrent;
       }
 
-      const rightPrevious = Number(right[String(year3)] || 0);
-      const leftPrevious = Number(left[String(year3)] || 0);
+      const rightPrevious = Number(right[String(year2)] || 0);
+      const leftPrevious = Number(left[String(year2)] || 0);
       if (rightPrevious !== leftPrevious) {
         return rightPrevious - leftPrevious;
       }
@@ -1112,35 +1140,36 @@ function buildProgramComparison(rows, currentYear) {
       "programName",
       String(year1),
       String(year2),
-      `${year2}Delta`,
       String(year3),
-      `${year3}Delta`,
-      `solicitudes${year4}`,
-      `${year4}Delta`
+      `${year2}Delta`,
+      `${year3}Delta`
     ],
     labels: {
       programName: "Programa",
       [String(year1)]: String(year1),
       [String(year2)]: String(year2),
-      [`${year2}Delta`]: `${year2} vs ${year1}`,
       [String(year3)]: String(year3),
-      [`${year3}Delta`]: `${year3} vs ${year2}`,
-      [`solicitudes${year4}`]: `Solicitudes ${year4}`,
-      [`${year4}Delta`]: `${year4} vs ${year3}`
+      [`${year2}Delta`]: `${year1} vs ${year2}`,
+      [`${year3}Delta`]: `${year2} vs ${year3}`
     },
     numericColumns: [
       String(year1),
       String(year2),
-      String(year3),
-      `solicitudes${year4}`
+      String(year3)
     ],
     rows: rowsFormatted
   };
 }
 
-function extractYear(value) {
-  const match = String(value || "").match(/^(\d{4})-/);
-  return match ? Number(match[1]) : 0;
+function extractProgramComparisonYear(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-/);
+  if (!match) {
+    return 0;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  return month >= 10 ? year + 1 : year;
 }
 
 function formatProgramDelta(previousCount, currentCount, isCurrentYearComparison) {
