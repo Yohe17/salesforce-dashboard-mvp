@@ -240,7 +240,7 @@ async function handleDashboardRefresh(req, res) {
     const solicitudes = solicitudesRecords.map((record) => mapRecord(record, config.solicitudes));
     const solicitudesHistory = solicitudesHistoryRecords.map((record) => mapRecord(record, config.solicitudes));
     const ownerDirectory = await loadOwnerDirectory(consultas, solicitudes);
-    const programDirectory = await loadProgramDirectory(consultas, solicitudes);
+    const programDirectory = buildProgramDirectory(consultas, solicitudes);
 
     sendJson(
       res,
@@ -473,21 +473,22 @@ function buildQuery(objectConfig, dateWindow) {
 }
 
 function buildDateFilter(objectConfig, dateWindow) {
+  const range = objectConfig.fixedDateRange || dateWindow;
   return {
     field: objectConfig.dateField,
     operator: "between",
-    start: objectConfig.dateKind === "datetime" ? dateWindow.startDateTime : dateWindow.startDate,
-    end: objectConfig.dateKind === "datetime" ? dateWindow.endDateTime : dateWindow.endDate
+    start: objectConfig.dateKind === "datetime" ? range.startDateTime : range.startDate,
+    end: objectConfig.dateKind === "datetime" ? range.endDateTime : range.endDate
   };
 }
 
 function buildFilterClause(filter) {
   if (filter.operator === "eq") {
-    return `${filter.field} = '${escapeSoqlString(filter.value)}'`;
+    return `${filter.field} = ${formatSoqlLiteral(filter.value)}`;
   }
 
   if (filter.operator === "in") {
-    const values = filter.values.map((value) => `'${escapeSoqlString(value)}'`).join(", ");
+    const values = filter.values.map((value) => formatSoqlLiteral(value)).join(", ");
     return `${filter.field} IN (${values})`;
   }
 
@@ -500,6 +501,18 @@ function buildFilterClause(filter) {
 
 function escapeSoqlString(value) {
   return String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+function formatSoqlLiteral(value) {
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  return `'${escapeSoqlString(value)}'`;
 }
 
 async function fetchAllRecords(soql) {
@@ -767,47 +780,34 @@ async function fetchUsersByIds(ownerIds) {
   return records;
 }
 
-async function loadProgramDirectory(consultas, solicitudes) {
-  const programIds = uniqueValues(
-    [...consultas, ...solicitudes]
-      .map((row) => row.programId)
-      .filter(Boolean)
-  );
+function buildProgramDirectory(consultas, solicitudes) {
+  const directory = new Map();
 
-  if (!programIds.length) {
-    return new Map();
+  for (const row of [...consultas, ...solicitudes]) {
+    const programKey = row.programId || row.programName;
+    if (!programKey) {
+      continue;
+    }
+
+    const existing = directory.get(programKey) || {
+      id: row.programId || "",
+      name: row.programName || "Sin programa",
+      objetivoSolicitudes: null
+    };
+    const rawGoal =
+      row.raw["Programa__r.ObjetivoSolicitudes__c"] ??
+      row.raw["hed__Applying_To__r.ObjetivoSolicitudes__c"] ??
+      null;
+    const normalizedGoal = normalizeGoalValue(rawGoal);
+
+    if (existing.objetivoSolicitudes === null && normalizedGoal !== null) {
+      existing.objetivoSolicitudes = normalizedGoal;
+    }
+
+    directory.set(programKey, existing);
   }
 
-  try {
-    const records = await fetchAccountsByIds(programIds);
-    return new Map(
-      records.map((record) => [
-        record.Id,
-        {
-          id: record.Id,
-          name: record.Name || "Sin programa",
-          objetivoSolicitudes: normalizeGoalValue(record.ObjetivoSolicitudes__c)
-        }
-      ])
-    );
-  } catch (error) {
-    return new Map();
-  }
-}
-
-async function fetchAccountsByIds(programIds) {
-  const chunkSize = 100;
-  const records = [];
-
-  for (let index = 0; index < programIds.length; index += chunkSize) {
-    const chunk = programIds.slice(index, index + chunkSize);
-    const values = chunk.map((id) => `'${escapeSoqlString(id)}'`).join(", ");
-    const soql = `SELECT Id, Name, ObjetivoSolicitudes__c FROM Account WHERE Id IN (${values})`;
-    const response = await fetchAllRecords(soql);
-    records.push(...response);
-  }
-
-  return records;
+  return directory;
 }
 
 function normalizeGoalValue(value) {
@@ -1020,7 +1020,7 @@ function attachProgramTarget(row, programDirectory) {
 
 function computeGoalRate(actualValue, goalValue) {
   if (!goalValue) {
-    return 0;
+    return null;
   }
 
   return Number(((actualValue / goalValue) * 100).toFixed(2));

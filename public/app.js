@@ -499,7 +499,7 @@ function attachProgramTargetClient(row, programDirectory) {
 
 function computeGoalRateClient(actualValue, goalValue) {
   if (!goalValue) {
-    return 0;
+    return null;
   }
 
   return Number(((actualValue / goalValue) * 100).toFixed(2));
@@ -711,6 +711,14 @@ function renderTable(container, columns, rows, labels = {}, options = {}) {
 }
 
 function formatValueForColumn(column, value, options = {}) {
+  if (column === "objetivoSolicitudes" && (value === null || value === undefined || value === "")) {
+    return "—";
+  }
+
+  if (column === "tasaCumplimiento" && (value === null || value === undefined || value === "")) {
+    return "—";
+  }
+
   if (column === "tasa" || column === "tasaCumplimiento") {
     return formatPercent(value);
   }

@@ -10,6 +10,13 @@
     "apiName": "Programa_de_Historial__c",
     "dateField": "CreatedDate",
     "dateKind": "datetime",
+    "fixedDateRange": {
+      "startDate": "2025-01-01",
+      "endDate": "2026-12-31",
+      "startDateTime": "2025-01-01T00:00:00Z",
+      "endDateTime": "2026-12-31T23:59:59Z",
+      "label": "1 Jan 2025 - 31 Dec 2026"
+    },
     "ownerField": "Owner.Name",
     "programIdField": "Programa__c",
     "programNameField": "Programa__r.Name",
@@ -20,6 +27,8 @@
       "Owner.Name",
       "Programa__c",
       "Programa__r.Name",
+      "Programa__r.ObjetivoSolicitudes__c",
+      "Programa__r.Activo__c",
       "RecordType.Name",
       "Origen_de_la_consulta__c"
     ],
@@ -37,6 +46,11 @@
           "Advertisement",
           "Anuncio"
         ]
+      },
+      {
+        "field": "Programa__r.Activo__c",
+        "operator": "eq",
+        "value": true
       }
     ]
   },
@@ -55,6 +69,8 @@
       "Owner.Name",
       "hed__Applying_To__c",
       "hed__Applying_To__r.Name",
+      "hed__Applying_To__r.ObjetivoSolicitudes__c",
+      "hed__Applying_To__r.Activo__c",
       "hed__Application_Status__c",
       "Tipo_de_Programa__c"
     ],
@@ -73,6 +89,11 @@
           "Admit",
           "Baja"
         ]
+      },
+      {
+        "field": "hed__Applying_To__r.Activo__c",
+        "operator": "eq",
+        "value": true
       }
     ]
   }
