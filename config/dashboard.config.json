@@ -45,11 +45,6 @@
           "Bautista Rebollini",
           "Segundo Vilamajo"
         ]
-      },
-      {
-        "field": "Programa__r.Activo__c",
-        "operator": "eq",
-        "value": true
       }
     ]
   },
