@@ -10,13 +10,6 @@
     "apiName": "Programa_de_Historial__c",
     "dateField": "CreatedDate",
     "dateKind": "datetime",
-    "fixedDateRange": {
-      "startDate": "2025-01-01",
-      "endDate": "2026-12-31",
-      "startDateTime": "2025-01-01T00:00:00Z",
-      "endDateTime": "2026-12-31T23:59:59Z",
-      "label": "1 Jan 2025 - 31 Dec 2026"
-    },
     "ownerField": "Programa__r.Asesor_responsable__r.Name",
     "ownerIdField": "Programa__r.Asesor_responsable__c",
     "programIdField": "Programa__c",

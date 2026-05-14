@@ -230,10 +230,12 @@ async function handleDashboardRefresh(req, res) {
   try {
     const config = await readDashboardConfig();
     const dateWindow = buildDateWindow(config.dateRange);
+    const solicitudesWindow = buildSolicitudesOperationalDateWindow(dateWindow.currentYear);
+    const consultasWindow = buildConsultasOperationalDateWindow(dateWindow.currentYear);
     const programComparisonWindow = buildProgramComparisonDateWindow(dateWindow.currentYear);
     const dashboardUser = await enrichDashboardUser(session);
-    const consultasRecords = await fetchAllRecords(buildQuery(config.consultas, dateWindow));
-    const solicitudesRecords = await fetchAllRecords(buildQuery(config.solicitudes, dateWindow));
+    const consultasRecords = await fetchAllRecords(buildQuery(config.consultas, consultasWindow));
+    const solicitudesRecords = await fetchAllRecords(buildQuery(config.solicitudes, solicitudesWindow));
     const solicitudesHistoryRecords = await fetchAllRecords(buildQuery(config.solicitudes, programComparisonWindow));
 
     const consultas = consultasRecords.map((record) => mapRecord(record, config.consultas));
@@ -248,6 +250,8 @@ async function handleDashboardRefresh(req, res) {
       buildDashboardPayload(
         config,
         dateWindow,
+        consultasWindow,
+        solicitudesWindow,
         consultas,
         solicitudes,
         solicitudesHistory,
@@ -855,7 +859,18 @@ function sortFilterOptions(options) {
   return options.sort((left, right) => left.label.localeCompare(right.label, "es"));
 }
 
-function buildDashboardPayload(config, dateWindow, consultas, solicitudes, solicitudesHistory, user, ownerDirectory, programDirectory) {
+function buildDashboardPayload(
+  config,
+  dateWindow,
+  consultasWindow,
+  solicitudesWindow,
+  consultas,
+  solicitudes,
+  solicitudesHistory,
+  user,
+  ownerDirectory,
+  programDirectory
+) {
   const byOwner = buildSeries(consultas, solicitudes, (row) => ({
     key: row.ownerId || row.owner,
     label: row.owner,
@@ -937,6 +952,10 @@ function buildDashboardPayload(config, dateWindow, consultas, solicitudes, solic
     source: {
       generatedAt: new Date().toISOString(),
       dateWindow,
+      queryWindows: {
+        consultas: consultasWindow,
+        solicitudes: solicitudesWindow
+      },
       user,
       consultas,
       solicitudes,
@@ -1059,15 +1078,24 @@ function buildDateWindow(dateRangeConfig = {}) {
   throw new Error(`Unsupported date range mode: ${dateRangeConfig.mode}`);
 }
 
-function buildHistoricalDateWindow(currentYear, spanYears) {
-  const startYear = currentYear - spanYears + 1;
-
+function buildSolicitudesOperationalDateWindow(currentYear) {
   return {
     currentYear,
-    label: `${startYear}-${currentYear}`,
-    startDate: `${startYear}-01-01`,
+    label: `Solicitudes ${currentYear}`,
+    startDate: `${currentYear}-01-01`,
     endDate: `${currentYear}-12-31`,
-    startDateTime: `${startYear}-01-01T00:00:00Z`,
+    startDateTime: `${currentYear}-01-01T00:00:00Z`,
+    endDateTime: `${currentYear}-12-31T23:59:59Z`
+  };
+}
+
+function buildConsultasOperationalDateWindow(currentYear) {
+  return {
+    currentYear,
+    label: `Consultas desde 20 Oct ${currentYear - 1}`,
+    startDate: `${currentYear - 1}-10-20`,
+    endDate: `${currentYear}-12-31`,
+    startDateTime: `${currentYear - 1}-10-20T00:00:00Z`,
     endDateTime: `${currentYear}-12-31T23:59:59Z`
   };
 }
