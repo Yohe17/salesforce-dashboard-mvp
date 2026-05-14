@@ -103,11 +103,6 @@
           "Bautista Rebollini",
           "Segundo Vilamajo"
         ]
-      },
-      {
-        "field": "hed__Applying_To__r.Activo__c",
-        "operator": "eq",
-        "value": true
       }
     ]
   }
