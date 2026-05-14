@@ -713,7 +713,11 @@ function formatValueForColumn(column, value, options = {}) {
     return "—";
   }
 
-  if (column === "tasa" || column === "tasaCumplimiento") {
+  if (column === "tasaCumplimiento") {
+    return formatComplianceSemaphore(value);
+  }
+
+  if (column === "tasa") {
     return formatPercent(value);
   }
 
@@ -735,6 +739,22 @@ function formatValueForColumn(column, value, options = {}) {
   }
 
   return value;
+}
+
+function formatComplianceSemaphore(value) {
+  if (value === null || value === undefined || value === "") {
+    return "—";
+  }
+
+  if (value <= 30) {
+    return "🔴";
+  }
+
+  if (value > 70) {
+    return "🟢";
+  }
+
+  return "🟡";
 }
 
 function renderMessage(message) {
