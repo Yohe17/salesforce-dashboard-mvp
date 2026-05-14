@@ -1104,10 +1104,10 @@ function buildProgramComparisonDateWindow(currentYear) {
   return {
     currentYear,
     label: `${currentYear - 2}-${currentYear}`,
-    startDate: `${currentYear - 3}-10-01`,
-    endDate: `${currentYear}-09-30`,
-    startDateTime: `${currentYear - 3}-10-01T00:00:00Z`,
-    endDateTime: `${currentYear}-09-30T23:59:59Z`
+    startDate: `${currentYear - 2}-01-01`,
+    endDate: `${currentYear}-12-31`,
+    startDateTime: `${currentYear - 2}-01-01T00:00:00Z`,
+    endDateTime: `${currentYear}-12-31T23:59:59Z`
   };
 }
 
@@ -1190,14 +1190,8 @@ function buildProgramComparison(rows, currentYear) {
 }
 
 function extractProgramComparisonYear(value) {
-  const match = String(value || "").match(/^(\d{4})-(\d{2})-/);
-  if (!match) {
-    return 0;
-  }
-
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  return month >= 10 ? year + 1 : year;
+  const match = String(value || "").match(/^(\d{4})-/);
+  return match ? Number(match[1]) : 0;
 }
 
 function formatProgramDelta(previousCount, currentCount, isCurrentYearComparison) {

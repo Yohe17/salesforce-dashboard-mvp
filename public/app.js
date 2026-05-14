@@ -584,14 +584,8 @@ function buildProgramComparisonClient(rows, currentYear) {
 }
 
 function extractProgramComparisonYearClient(value) {
-  const match = String(value || "").match(/^(\d{4})-(\d{2})-/);
-  if (!match) {
-    return 0;
-  }
-
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  return month >= 10 ? year + 1 : year;
+  const match = String(value || "").match(/^(\d{4})-/);
+  return match ? Number(match[1]) : 0;
 }
 
 function formatProgramDeltaClient(previousCount, currentCount, isCurrentYearComparison) {
