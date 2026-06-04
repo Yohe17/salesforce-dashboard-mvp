@@ -204,7 +204,8 @@ async function handleDashboardConfig(req, res) {
     const config = await readDashboardConfig();
     sendJson(res, 200, {
       title: config.title,
-      subtitle: config.subtitle || ""
+      subtitle: config.subtitle || "",
+      solicitudesGoal: config.solicitudesGoal || 7500
     });
   } catch (error) {
     sendJson(res, 500, {

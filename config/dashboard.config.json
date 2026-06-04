@@ -1,6 +1,7 @@
 {
   "title": "Panel asesores",
   "subtitle": "",
+  "solicitudesGoal": 7500,
   "dateRange": {
     "mode": "current_calendar_year",
     "label": "Ano calendario actual"

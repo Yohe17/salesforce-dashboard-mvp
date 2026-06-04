@@ -1,3 +1,5 @@
+const DEFAULT_SOLICITUDES_GOAL = 7500;
+
 const state = {
   session: null,
   config: null,
@@ -23,6 +25,7 @@ const elements = {
   programFilter: document.querySelector("#program-filter"),
   dashboardContent: document.querySelector("#dashboard-content"),
   kpiGrid: document.querySelector("#kpi-grid"),
+  solicitudesGoal: document.querySelector("#solicitudes-goal"),
   ownerChart: document.querySelector("#owner-chart"),
   programChart: document.querySelector("#program-chart"),
   ownerTable: document.querySelector("#owner-table"),
@@ -165,6 +168,7 @@ function renderDashboard() {
   }
 
   renderKpis();
+  renderSolicitudesGoalProgress();
   renderBarList(elements.ownerChart, state.dashboard.charts.byOwner);
   renderBarList(elements.programChart, state.dashboard.charts.byProgram);
   renderTable(elements.ownerTable, ["label", "consultas", "solicitudes", "tasa"], state.dashboard.tables.byOwner, {
@@ -224,7 +228,8 @@ function recomputeDashboard() {
     ownerDirectory,
     programDirectory,
     filterOptions,
-    appliedFilters
+    appliedFilters,
+    state.source.solicitudes.length
   );
 
   renderFilterControls(filterOptions, appliedFilters);
@@ -234,6 +239,7 @@ function recomputeDashboard() {
 function clearDashboardContainers() {
   [
     elements.kpiGrid,
+    elements.solicitudesGoal,
     elements.ownerChart,
     elements.programChart,
     elements.ownerTable,
@@ -244,6 +250,7 @@ function clearDashboardContainers() {
   ].forEach((element) => {
     element.innerHTML = "";
   });
+  elements.solicitudesGoal.hidden = true;
 }
 
 function renderKpis() {
@@ -263,6 +270,57 @@ function renderKpis() {
     card.append(label, value);
     elements.kpiGrid.append(card);
   });
+}
+
+function renderSolicitudesGoalProgress() {
+  const progress = state.dashboard?.solicitudesGoalProgress;
+  elements.solicitudesGoal.innerHTML = "";
+  elements.solicitudesGoal.hidden = !progress;
+
+  if (!progress) {
+    return;
+  }
+
+  const boundedPercent = Math.max(0, Math.min(progress.percent, 100));
+  const header = document.createElement("div");
+  header.className = "goal-progress-header";
+
+  const titleBlock = document.createElement("div");
+  const eyebrow = document.createElement("p");
+  eyebrow.className = "eyebrow";
+  eyebrow.textContent = "Objetivo general";
+
+  const title = document.createElement("strong");
+  title.textContent = "Solicitudes";
+
+  titleBlock.append(eyebrow, title);
+
+  const target = document.createElement("span");
+  target.className = "goal-progress-target";
+  target.textContent = `Objetivo ${formatNumber(progress.target)}`;
+
+  header.append(titleBlock, target);
+
+  const track = document.createElement("div");
+  track.className = "goal-progress-track";
+  track.setAttribute("aria-label", `${formatPercent(progress.percent)} completado del objetivo general de ${formatNumber(progress.target)} solicitudes`);
+
+  const fill = document.createElement("div");
+  fill.className = "goal-progress-fill";
+  fill.style.width = `${boundedPercent}%`;
+  track.append(fill);
+
+  const footer = document.createElement("div");
+  footer.className = "goal-progress-footer";
+
+  const current = document.createElement("span");
+  current.textContent = `${formatNumber(progress.current)} de ${formatNumber(progress.target)} solicitudes totales`;
+
+  const percent = document.createElement("strong");
+  percent.textContent = `${formatPercent(progress.percent)} completado`;
+
+  footer.append(current, percent);
+  elements.solicitudesGoal.append(header, track, footer);
 }
 
 function renderFilterControls(filterOptions = {}, activeFilters = {}) {
@@ -361,7 +419,18 @@ function applyDashboardFiltersClient(rows, filters) {
   });
 }
 
-function buildDashboardView(dateWindow, consultas, solicitudes, solicitudesHistory, user, ownerDirectory, programDirectory, filterOptions, activeFilters) {
+function buildDashboardView(
+  dateWindow,
+  consultas,
+  solicitudes,
+  solicitudesHistory,
+  user,
+  ownerDirectory,
+  programDirectory,
+  filterOptions,
+  activeFilters,
+  generalSolicitudesCount
+) {
   const byOwner = buildSeriesClient(consultas, solicitudes, (row) => ({
     key: row.ownerId || row.owner,
     label: row.owner,
@@ -378,6 +447,7 @@ function buildDashboardView(dateWindow, consultas, solicitudes, solicitudesHisto
   const consultasCount = consultas.length;
   const solicitudesCount = solicitudes.length;
   const conversionRate = computeRateClient(solicitudesCount, consultasCount);
+  const solicitudesGoal = resolveSolicitudesGoal();
   const byProgramWithTargets = byProgram.map((row) => attachProgramTargetClient(row, programDirectory));
   const programComparison = buildProgramComparisonClient(solicitudesHistory, dateWindow.currentYear);
 
@@ -387,6 +457,7 @@ function buildDashboardView(dateWindow, consultas, solicitudes, solicitudesHisto
     user,
     activeFilters,
     filterOptions,
+    solicitudesGoalProgress: buildSolicitudesGoalProgressClient(generalSolicitudesCount, solicitudesGoal),
     kpis: [
       {
         label: "Consultas",
@@ -438,6 +509,23 @@ function buildDashboardView(dateWindow, consultas, solicitudes, solicitudesHisto
         "Tipo Programa": row.raw["Tipo_de_Programa__c"] || "—"
       }))
     }
+  };
+}
+
+function resolveSolicitudesGoal() {
+  const configuredGoal = Number(state.config?.solicitudesGoal);
+  return Number.isFinite(configuredGoal) && configuredGoal > 0 ? configuredGoal : DEFAULT_SOLICITUDES_GOAL;
+}
+
+function buildSolicitudesGoalProgressClient(current, target) {
+  if (!target) {
+    return null;
+  }
+
+  return {
+    current,
+    target,
+    percent: computeGoalRateClient(current, target)
   };
 }
 
