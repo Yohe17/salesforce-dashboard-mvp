@@ -828,9 +828,20 @@ function normalizeGoalValue(value) {
   return Number(numeric.toFixed(2));
 }
 
-function buildFilterOptions(consultas, solicitudes, ownerDirectory) {
+function buildFilterOptions(consultas, solicitudes, ownerDirectory, configuredOwners = []) {
   const owners = new Map();
   const programs = new Map();
+
+  for (const owner of configuredOwners) {
+    const value = owner.id || owner.name;
+    const label = owner.name || owner.id;
+    if (value && label && !owners.has(value)) {
+      owners.set(value, {
+        value,
+        label
+      });
+    }
+  }
 
   for (const row of [...consultas, ...solicitudes]) {
     const ownerKey = row.ownerId || row.owner;
@@ -898,7 +909,7 @@ function buildDashboardPayload(
   const conversionRate = computeRate(solicitudesCount, consultasCount);
   const byProgramWithTargets = byProgram.map((row) => attachProgramTarget(row, programDirectory));
   const programComparison = buildProgramComparison(solicitudesHistory, dateWindow.currentYear);
-  const filterOptions = buildFilterOptions(consultas, solicitudes, ownerDirectory);
+  const filterOptions = buildFilterOptions(consultas, solicitudes, ownerDirectory, config.ownerOptions || []);
   const activeFilters = {
     owner: "all",
     program: "all"

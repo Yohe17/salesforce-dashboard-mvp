@@ -2,6 +2,12 @@
   "title": "Panel asesores",
   "subtitle": "",
   "solicitudesGoal": 7500,
+  "ownerOptions": [
+    {
+      "id": "005VJ00000AM8Z3YAL",
+      "name": "Mateo De Santo"
+    }
+  ],
   "dateRange": {
     "mode": "current_calendar_year",
     "label": "Ano calendario actual"
@@ -44,6 +50,7 @@
           "Santiago Ivaldi Sesto",
           "Matias Manconi",
           "Bautista Rebollini",
+          "Mateo De Santo",
           "Segundo Vilamajo"
         ]
       }
@@ -97,6 +104,7 @@
           "Santiago Ivaldi Sesto",
           "Matias Manconi",
           "Bautista Rebollini",
+          "Mateo De Santo",
           "Segundo Vilamajo"
         ]
       }
