@@ -212,7 +212,10 @@ function recomputeDashboard() {
 
   const ownerDirectory = createOwnerDirectoryMap(state.source.ownerDirectory || []);
   const programDirectory = createProgramDirectoryMap(state.source.programDirectory || []);
-  const filterOptions = state.source.filterOptions || buildFilterOptionsClient(state.source.consultas, state.source.solicitudes, ownerDirectory);
+  const filterOptions = mergeConfiguredOwnerOptions(
+    state.source.filterOptions || buildFilterOptionsClient(state.source.consultas, state.source.solicitudes, ownerDirectory),
+    state.config?.ownerOptions || []
+  );
   const appliedFilters = resolveDashboardFiltersClient(state.filters, filterOptions);
   const filteredConsultas = applyDashboardFiltersClient(state.source.consultas, appliedFilters);
   const filteredSolicitudes = applyDashboardFiltersClient(state.source.solicitudes, appliedFilters);
@@ -392,6 +395,33 @@ function buildFilterOptionsClient(consultas, solicitudes, ownerDirectory) {
   return {
     owners: [{ value: "all", label: "Todos" }, ...sortFilterOptionsClient([...owners.values()])],
     programs: [{ value: "all", label: "Todos" }, ...sortFilterOptionsClient([...programs.values()])]
+  };
+}
+
+function mergeConfiguredOwnerOptions(filterOptions, configuredOwners = []) {
+  const allOption = filterOptions.owners?.find((option) => option.value === "all") || { value: "all", label: "Todos" };
+  const owners = new Map();
+
+  for (const option of filterOptions.owners || []) {
+    if (option.value !== "all") {
+      owners.set(option.value, option);
+    }
+  }
+
+  for (const owner of configuredOwners) {
+    const value = owner.id || owner.name;
+    const label = owner.name || owner.id;
+    if (value && label && !owners.has(value)) {
+      owners.set(value, {
+        value,
+        label
+      });
+    }
+  }
+
+  return {
+    ...filterOptions,
+    owners: [allOption, ...sortFilterOptionsClient([...owners.values()])]
   };
 }
 

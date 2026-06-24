@@ -205,7 +205,8 @@ async function handleDashboardConfig(req, res) {
     sendJson(res, 200, {
       title: config.title,
       subtitle: config.subtitle || "",
-      solicitudesGoal: config.solicitudesGoal || 7500
+      solicitudesGoal: config.solicitudesGoal || 7500,
+      ownerOptions: config.ownerOptions || []
     });
   } catch (error) {
     sendJson(res, 500, {
