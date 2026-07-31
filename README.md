@@ -73,14 +73,14 @@ Ademas:
 - Fecha: `CreatedDate`
 - `RecordType.Name = UCEMAX`
 - `Origen_de_la_consulta__c in (Web, Advertisement, Anuncio)`
-- `Owner.Name` en la lista fija definida en el JSON
+- `Asesor_responsable__r.Username` en la lista fija definida en el JSON
 
 ### Solicitudes
 
 - Objeto: `hed__Application__c`
 - Fecha: `FechaPlazo__c`
 - `Tipo_de_Programa__c = Programas Ejecutivos`
-- `Owner.Name` en la misma lista fija
+- `Asesor_responsable__r.Username` en la misma lista fija
 
 ## Nota importante del calculo
 

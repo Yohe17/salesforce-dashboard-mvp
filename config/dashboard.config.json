@@ -4,8 +4,12 @@
   "solicitudesGoal": 7500,
   "ownerOptions": [
     {
-      "id": "005VJ00000AM8Z3YAL",
+      "username": "v-mdsanto@ucema.edu.ar",
       "name": "Mateo De Santo"
+    },
+    {
+      "username": "v-esalom@ucema.edu.ar",
+      "name": "Ezequiel Salom"
     }
   ],
   "dateRange": {
@@ -19,6 +23,7 @@
     "dateKind": "datetime",
     "ownerField": "Programa__r.Asesor_responsable__r.Name",
     "ownerIdField": "Programa__r.Asesor_responsable__c",
+    "ownerUsernameField": "Programa__r.Asesor_responsable__r.Username",
     "programIdField": "Programa__c",
     "programNameField": "Programa__r.Name",
     "fields": [
@@ -27,6 +32,7 @@
       "CreatedDate",
       "Programa__r.Asesor_responsable__c",
       "Programa__r.Asesor_responsable__r.Name",
+      "Programa__r.Asesor_responsable__r.Username",
       "Programa__c",
       "Programa__r.Name",
       "Programa__r.ObjetivoSolicitudes__c",
@@ -41,17 +47,17 @@
         "value": "UCEMAX"
       },
       {
-        "field": "Programa__r.Asesor_responsable__r.Name",
+        "field": "Programa__r.Asesor_responsable__r.Username",
         "operator": "in",
         "values": [
-          "Azul Schmidt",
-          "Francisco Aliano",
-          "Pedro Graces",
-          "Santiago Ivaldi Sesto",
-          "Matias Manconi",
-          "Bautista Rebollini",
-          "Mateo De Santo",
-          "Segundo Vilamajo"
+          "asesorejecutivos1@ucema.edu.ar",
+          "asesorejecutivos6@ucema.edu.ar",
+          "asesorejecutivos8@ucema.edu.ar",
+          "asesorejecutivos3@ucema.edu.ar",
+          "asesorejecutivos4@ucema.edu.ar",
+          "v-mdsanto@ucema.edu.ar",
+          "v-esalom@ucema.edu.ar",
+          "v-svilamajo@ucema.edu.ar"
         ]
       }
     ]
@@ -63,6 +69,7 @@
     "dateKind": "date",
     "ownerField": "hed__Applying_To__r.Asesor_responsable__r.Name",
     "ownerIdField": "hed__Applying_To__r.Asesor_responsable__c",
+    "ownerUsernameField": "hed__Applying_To__r.Asesor_responsable__r.Username",
     "programIdField": "hed__Applying_To__c",
     "programNameField": "hed__Applying_To__r.Name",
     "fields": [
@@ -71,6 +78,7 @@
       "FechaPlazo__c",
       "hed__Applying_To__r.Asesor_responsable__c",
       "hed__Applying_To__r.Asesor_responsable__r.Name",
+      "hed__Applying_To__r.Asesor_responsable__r.Username",
       "hed__Applying_To__c",
       "hed__Applying_To__r.Name",
       "hed__Applying_To__r.ObjetivoSolicitudes__c",
@@ -95,17 +103,17 @@
         ]
       },
       {
-        "field": "hed__Applying_To__r.Asesor_responsable__r.Name",
+        "field": "hed__Applying_To__r.Asesor_responsable__r.Username",
         "operator": "in",
         "values": [
-          "Azul Schmidt",
-          "Francisco Aliano",
-          "Pedro Graces",
-          "Santiago Ivaldi Sesto",
-          "Matias Manconi",
-          "Bautista Rebollini",
-          "Mateo De Santo",
-          "Segundo Vilamajo"
+          "asesorejecutivos1@ucema.edu.ar",
+          "asesorejecutivos6@ucema.edu.ar",
+          "asesorejecutivos8@ucema.edu.ar",
+          "asesorejecutivos3@ucema.edu.ar",
+          "asesorejecutivos4@ucema.edu.ar",
+          "v-mdsanto@ucema.edu.ar",
+          "v-esalom@ucema.edu.ar",
+          "v-svilamajo@ucema.edu.ar"
         ]
       }
     ]

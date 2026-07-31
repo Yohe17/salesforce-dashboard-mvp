@@ -657,6 +657,7 @@ async function fetchJson(url, options = {}) {
 function mapRecord(record, objectConfig) {
   const owner = getNestedValue(record, objectConfig.ownerField) || "Sin owner";
   const ownerId = getNestedValue(record, objectConfig.ownerIdField || "OwnerId") || "";
+  const ownerUsername = objectConfig.ownerUsernameField ? getNestedValue(record, objectConfig.ownerUsernameField) || "" : "";
   const programId = getNestedValue(record, objectConfig.programIdField) || "";
   const programName = getNestedValue(record, objectConfig.programNameField) || "Sin programa";
   const dateValue = getNestedValue(record, objectConfig.dateField) || "";
@@ -665,6 +666,7 @@ function mapRecord(record, objectConfig) {
     id: record.Id,
     owner,
     ownerId,
+    ownerUsername,
     programId,
     programName,
     dateValue,
@@ -834,8 +836,8 @@ function buildFilterOptions(consultas, solicitudes, ownerDirectory, configuredOw
   const programs = new Map();
 
   for (const owner of configuredOwners) {
-    const value = owner.id || owner.name;
-    const label = owner.name || owner.id;
+    const value = owner.username || owner.id || owner.name;
+    const label = owner.name || owner.username || owner.id;
     if (value && label && !owners.has(value)) {
       owners.set(value, {
         value,
@@ -845,7 +847,7 @@ function buildFilterOptions(consultas, solicitudes, ownerDirectory, configuredOw
   }
 
   for (const row of [...consultas, ...solicitudes]) {
-    const ownerKey = row.ownerId || row.owner;
+    const ownerKey = row.ownerUsername || row.ownerId || row.owner;
     if (ownerKey && !owners.has(ownerKey)) {
       owners.set(ownerKey, {
         value: ownerKey,

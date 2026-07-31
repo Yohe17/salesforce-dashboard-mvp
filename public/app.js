@@ -375,7 +375,7 @@ function buildFilterOptionsClient(consultas, solicitudes, ownerDirectory) {
   const programs = new Map();
 
   for (const row of [...consultas, ...solicitudes]) {
-    const ownerKey = row.ownerId || row.owner;
+    const ownerKey = row.ownerUsername || row.ownerId || row.owner;
     if (ownerKey && !owners.has(ownerKey)) {
       owners.set(ownerKey, {
         value: ownerKey,
@@ -409,8 +409,8 @@ function mergeConfiguredOwnerOptions(filterOptions, configuredOwners = []) {
   }
 
   for (const owner of configuredOwners) {
-    const value = owner.id || owner.name;
-    const label = owner.name || owner.id;
+    const value = owner.username || owner.id || owner.name;
+    const label = owner.name || owner.username || owner.id;
     if (value && label && !owners.has(value)) {
       owners.set(value, {
         value,
@@ -441,7 +441,7 @@ function resolveDashboardFiltersClient(selectedFilters, filterOptions) {
 
 function applyDashboardFiltersClient(rows, filters) {
   return rows.filter((row) => {
-    const ownerKey = row.ownerId || row.owner;
+    const ownerKey = row.ownerUsername || row.ownerId || row.owner;
     const programKey = row.programId || row.programName;
     const ownerMatches = filters.owner === "all" || ownerKey === filters.owner;
     const programMatches = filters.program === "all" || programKey === filters.program;
