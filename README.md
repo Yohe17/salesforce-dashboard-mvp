@@ -32,6 +32,8 @@ Objetos configurados:
   Objetos, filtros, owners, campos y rango dinamico
 - `public/`
   Panel HTML/CSS/JS con KPIs, tablas y barras
+- `docs/codex-handoff-panel-asesores.md`
+  Documento de traspaso para operar este repo con Codex, GitHub, Render y Salesforce
 
 ## Variables de entorno
 
@@ -70,15 +72,14 @@ Ademas:
 ### Consultas
 
 - Objeto: `Programa_de_Historial__c`
-- Fecha: `CreatedDate`
+- Fecha: `CreatedDate`, desde el 20 Oct del ano anterior hasta el 31 Dec del ano actual
 - `RecordType.Name = UCEMAX`
-- `Origen_de_la_consulta__c in (Web, Advertisement, Anuncio)`
 - `Asesor_responsable__r.Email` en la lista fija definida en el JSON
 
 ### Solicitudes
 
 - Objeto: `hed__Application__c`
-- Fecha: `FechaPlazo__c`
+- Fecha: `FechaPlazo__c`, desde el 1 Jan hasta el 31 Dec del ano actual
 - `Tipo_de_Programa__c = Programas Ejecutivos`
 - `Asesor_responsable__r.Email` en la misma lista fija
 
@@ -94,14 +95,11 @@ Por eso, la tasa en este MVP es:
 
 ## Suposicion actual del rango dinamico
 
-El MVP usa por defecto:
+El MVP deriva los rangos desde el ano calendario actual:
 
-- `Ano calendario actual`
-
-Es decir:
-
-- inicio: `1 Jan del ano actual`
-- fin: `31 Dec del ano actual`
+- Consultas: desde `20 Oct` del ano anterior hasta `31 Dec` del ano actual
+- Solicitudes: desde `1 Jan` hasta `31 Dec` del ano actual
+- Comparativo: desde `1 Jan` de dos anos atras hasta `31 Dec` del ano actual
 
 Si despues queres cambiarlo por `current FY`, rango academico o un selector manual, lo podemos ajustar sin rehacer la arquitectura.
 
