@@ -4,11 +4,11 @@
   "solicitudesGoal": 7500,
   "ownerOptions": [
     {
-      "username": "v-mdsanto@ucema.edu.ar",
+      "email": "v-mdsanto@ucema.edu.ar",
       "name": "Mateo De Santo"
     },
     {
-      "username": "v-esalom@ucema.edu.ar",
+      "email": "v-esalom@ucema.edu.ar",
       "name": "Ezequiel Salom"
     }
   ],
@@ -23,7 +23,7 @@
     "dateKind": "datetime",
     "ownerField": "Programa__r.Asesor_responsable__r.Name",
     "ownerIdField": "Programa__r.Asesor_responsable__c",
-    "ownerUsernameField": "Programa__r.Asesor_responsable__r.Username",
+    "ownerEmailField": "Programa__r.Asesor_responsable__r.Email",
     "programIdField": "Programa__c",
     "programNameField": "Programa__r.Name",
     "fields": [
@@ -32,7 +32,7 @@
       "CreatedDate",
       "Programa__r.Asesor_responsable__c",
       "Programa__r.Asesor_responsable__r.Name",
-      "Programa__r.Asesor_responsable__r.Username",
+      "Programa__r.Asesor_responsable__r.Email",
       "Programa__c",
       "Programa__r.Name",
       "Programa__r.ObjetivoSolicitudes__c",
@@ -47,14 +47,14 @@
         "value": "UCEMAX"
       },
       {
-        "field": "Programa__r.Asesor_responsable__r.Username",
+        "field": "Programa__r.Asesor_responsable__r.Email",
         "operator": "in",
         "values": [
-          "asesorejecutivos1@ucema.edu.ar",
-          "asesorejecutivos6@ucema.edu.ar",
-          "asesorejecutivos8@ucema.edu.ar",
-          "asesorejecutivos3@ucema.edu.ar",
-          "asesorejecutivos4@ucema.edu.ar",
+          "v-aschmidt@ucema.edu.ar",
+          "v-faliano@ucema.edu.ar",
+          "v-pgraces@ucema.edu.ar",
+          "v-sivaldis@ucema.edu.ar",
+          "v-brebollini@ucema.edu.ar",
           "v-mdsanto@ucema.edu.ar",
           "v-esalom@ucema.edu.ar",
           "v-svilamajo@ucema.edu.ar"
@@ -69,7 +69,7 @@
     "dateKind": "date",
     "ownerField": "hed__Applying_To__r.Asesor_responsable__r.Name",
     "ownerIdField": "hed__Applying_To__r.Asesor_responsable__c",
-    "ownerUsernameField": "hed__Applying_To__r.Asesor_responsable__r.Username",
+    "ownerEmailField": "hed__Applying_To__r.Asesor_responsable__r.Email",
     "programIdField": "hed__Applying_To__c",
     "programNameField": "hed__Applying_To__r.Name",
     "fields": [
@@ -78,7 +78,7 @@
       "FechaPlazo__c",
       "hed__Applying_To__r.Asesor_responsable__c",
       "hed__Applying_To__r.Asesor_responsable__r.Name",
-      "hed__Applying_To__r.Asesor_responsable__r.Username",
+      "hed__Applying_To__r.Asesor_responsable__r.Email",
       "hed__Applying_To__c",
       "hed__Applying_To__r.Name",
       "hed__Applying_To__r.ObjetivoSolicitudes__c",
@@ -103,14 +103,14 @@
         ]
       },
       {
-        "field": "hed__Applying_To__r.Asesor_responsable__r.Username",
+        "field": "hed__Applying_To__r.Asesor_responsable__r.Email",
         "operator": "in",
         "values": [
-          "asesorejecutivos1@ucema.edu.ar",
-          "asesorejecutivos6@ucema.edu.ar",
-          "asesorejecutivos8@ucema.edu.ar",
-          "asesorejecutivos3@ucema.edu.ar",
-          "asesorejecutivos4@ucema.edu.ar",
+          "v-aschmidt@ucema.edu.ar",
+          "v-faliano@ucema.edu.ar",
+          "v-pgraces@ucema.edu.ar",
+          "v-sivaldis@ucema.edu.ar",
+          "v-brebollini@ucema.edu.ar",
           "v-mdsanto@ucema.edu.ar",
           "v-esalom@ucema.edu.ar",
           "v-svilamajo@ucema.edu.ar"

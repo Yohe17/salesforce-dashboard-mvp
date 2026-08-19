@@ -657,6 +657,7 @@ async function fetchJson(url, options = {}) {
 function mapRecord(record, objectConfig) {
   const owner = getNestedValue(record, objectConfig.ownerField) || "Sin owner";
   const ownerId = getNestedValue(record, objectConfig.ownerIdField || "OwnerId") || "";
+  const ownerEmail = objectConfig.ownerEmailField ? getNestedValue(record, objectConfig.ownerEmailField) || "" : "";
   const ownerUsername = objectConfig.ownerUsernameField ? getNestedValue(record, objectConfig.ownerUsernameField) || "" : "";
   const programId = getNestedValue(record, objectConfig.programIdField) || "";
   const programName = getNestedValue(record, objectConfig.programNameField) || "Sin programa";
@@ -666,6 +667,7 @@ function mapRecord(record, objectConfig) {
     id: record.Id,
     owner,
     ownerId,
+    ownerEmail,
     ownerUsername,
     programId,
     programName,
@@ -836,8 +838,8 @@ function buildFilterOptions(consultas, solicitudes, ownerDirectory, configuredOw
   const programs = new Map();
 
   for (const owner of configuredOwners) {
-    const value = owner.username || owner.id || owner.name;
-    const label = owner.name || owner.username || owner.id;
+    const value = owner.email || owner.username || owner.id || owner.name;
+    const label = owner.name || owner.email || owner.username || owner.id;
     if (value && label && !owners.has(value)) {
       owners.set(value, {
         value,
@@ -847,7 +849,7 @@ function buildFilterOptions(consultas, solicitudes, ownerDirectory, configuredOw
   }
 
   for (const row of [...consultas, ...solicitudes]) {
-    const ownerKey = row.ownerUsername || row.ownerId || row.owner;
+    const ownerKey = row.ownerEmail || row.ownerUsername || row.ownerId || row.owner;
     if (ownerKey && !owners.has(ownerKey)) {
       owners.set(ownerKey, {
         value: ownerKey,
@@ -887,10 +889,12 @@ function buildDashboardPayload(
   programDirectory
 ) {
   const byOwner = buildSeries(consultas, solicitudes, (row) => ({
-    key: row.ownerId || row.owner,
+    key: row.ownerEmail || row.ownerUsername || row.ownerId || row.owner,
     label: row.owner,
     owner: row.owner,
-    ownerId: row.ownerId
+    ownerId: row.ownerId,
+    ownerEmail: row.ownerEmail,
+    ownerUsername: row.ownerUsername
   }));
   const byProgram = buildSeries(consultas, solicitudes, (row) => ({
     key: row.programId || row.programName,
@@ -899,10 +903,12 @@ function buildDashboardPayload(
     programId: row.programId
   }));
   const byOwnerProgram = buildSeries(consultas, solicitudes, (row) => ({
-    key: `${row.ownerId || row.owner}::${row.programId || row.programName}`,
+    key: `${row.ownerEmail || row.ownerUsername || row.ownerId || row.owner}::${row.programId || row.programName}`,
     label: `${row.owner} · ${row.programName}`,
     owner: row.owner,
     ownerId: row.ownerId,
+    ownerEmail: row.ownerEmail,
+    ownerUsername: row.ownerUsername,
     programName: row.programName,
     programId: row.programId
   }));
@@ -1035,6 +1041,8 @@ function createSeriesEntry(info) {
     label: info.label,
     owner: info.owner || "",
     ownerId: info.ownerId || "",
+    ownerEmail: info.ownerEmail || "",
+    ownerUsername: info.ownerUsername || "",
     programName: info.programName || "",
     programId: info.programId || "",
     consultas: 0,
